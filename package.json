@@ -1,0 +1,56 @@
+{
+  "name": "bishoptv",
+  "productName": "BishopTV",
+  "version": "1.0.0",
+  "description": "BishopTV — player IPTV com interface estilo Netflix: listas .m3u, URL e Xtream Codes",
+  "main": "main.js",
+  "author": "lucio",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "dist": "electron-builder --win --x64",
+    "pack": "electron-builder --dir"
+  },
+  "dependencies": {
+    "hls.js": "^1.5.20",
+    "mpegts.js": "^1.8.0"
+  },
+  "devDependencies": {
+    "electron": "^33.3.1",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.lucio.bishoptv",
+    "productName": "BishopTV",
+    "files": [
+      "main.js",
+      "preload.js",
+      "src/**/*",
+      "node_modules/hls.js/dist/hls.min.js",
+      "node_modules/mpegts.js/dist/mpegts.js"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "BishopTV"
+    }
+  }
+}

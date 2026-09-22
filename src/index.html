@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src * 'unsafe-inline' 'unsafe-eval' data: blob: file:; media-src * blob: data:; img-src * data: blob:;">
+<title>BishopTV</title>
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+
+<!-- ============ BARRA DE TÍTULO / NAVEGAÇÃO ============ -->
+<header id="topbar">
+  <div class="tb-drag"></div>
+  <div class="tb-inner">
+    <div class="brand" data-nav="home">
+      <span class="brand-mark">BISHOP</span><span class="brand-tv">TV</span>
+    </div>
+
+    <nav class="mainnav" id="mainnav">
+      <button class="navitem active" data-nav="home">Início</button>
+      <button class="navitem" data-nav="live">TV ao Vivo</button>
+      <button class="navitem" data-nav="movies">Filmes</button>
+      <button class="navitem" data-nav="series">Séries</button>
+      <button class="navitem" data-nav="mylist">Minha Lista</button>
+    </nav>
+
+    <div class="tb-right">
+      <div class="searchbox" id="searchbox">
+        <button class="icon-btn" id="searchToggle" title="Buscar (Ctrl+K)">
+          <svg viewBox="0 0 24 24"><path d="M10 4a6 6 0 104.47 10.03l4.25 4.25 1.41-1.41-4.25-4.25A6 6 0 0010 4zm0 2a4 4 0 110 8 4 4 0 010-8z"/></svg>
+        </button>
+        <input type="text" id="searchInput" placeholder="Buscar canais, filmes, séries…" spellcheck="false">
+      </div>
+
+      <button class="icon-btn" id="sourcesBtn" title="Fontes / Listas">
+        <svg viewBox="0 0 24 24"><path d="M4 6h16v2H4zm0 5h16v2H4zm0 5h10v2H4z"/></svg>
+      </button>
+      <button class="icon-btn" id="settingsBtn" title="Configurações">
+        <svg viewBox="0 0 24 24"><path d="M12 8a4 4 0 100 8 4 4 0 000-8zm8.94 4a7.9 7.9 0 00-.2-1.73l2.1-1.6-2-3.46-2.47 1a8.1 8.1 0 00-1.5-.87l-.37-2.6h-4l-.37 2.6c-.53.22-1.03.51-1.5.87l-2.47-1-2 3.46 2.1 1.6a8 8 0 000 3.46l-2.1 1.6 2 3.46 2.47-1c.47.36.97.65 1.5.87l.37 2.6h4l.37-2.6c.53-.22 1.03-.51 1.5-.87l2.47 1 2-3.46-2.1-1.6c.13-.56.2-1.14.2-1.73z"/></svg>
+      </button>
+
+      <div class="winctl">
+        <button class="wc" id="wcMin" title="Minimizar"><span class="wc-min"></span></button>
+        <button class="wc" id="wcMax" title="Maximizar"><span class="wc-max"></span></button>
+        <button class="wc wc-close" id="wcClose" title="Fechar"><span class="wc-x"></span></button>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- ============ CONTEÚDO ============ -->
+<main id="app">
+
+  <!-- HOME -->
+  <section class="view" id="view-home">
+    <div class="hero" id="hero">
+      <div class="hero-bg" id="heroBg"></div>
+      <div class="hero-fade"></div>
+      <div class="hero-content">
+        <div class="hero-kicker" id="heroKicker"></div>
+        <h1 class="hero-title" id="heroTitle"></h1>
+        <p class="hero-meta" id="heroMeta"></p>
+        <p class="hero-desc" id="heroDesc"></p>
+        <div class="hero-actions">
+          <button class="btn btn-play" id="heroPlay">
+            <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg> Assistir
+          </button>
+          <button class="btn btn-ghost" id="heroInfo">
+            <svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 100 20 10 10 0 000-20zm1 15h-2v-6h2zm0-8h-2V7h2z"/></svg> Mais informações
+          </button>
+        </div>
+      </div>
+    </div>
+    <div class="rows" id="homeRows"></div>
+  </section>
+
+  <!-- TV AO VIVO -->
+  <section class="view hidden" id="view-live">
+    <div class="catalog">
+      <aside class="cat-side">
+        <div class="cat-side-head">
+          <h3>Categorias</h3>
+          <input type="text" class="mini-input" id="liveCatFilter" placeholder="Filtrar…">
+        </div>
+        <div class="cat-list" id="liveCats"></div>
+      </aside>
+      <div class="cat-main">
+        <div class="cat-head">
+          <h2 id="liveTitle">TV ao Vivo</h2>
+          <div class="cat-tools">
+            <input type="text" class="mini-input wide" id="liveFilter" placeholder="Filtrar canais nesta categoria…">
+            <span class="count" id="liveCount"></span>
+          </div>
+        </div>
+        <div class="grid grid-live" id="liveGrid"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FILMES -->
+  <section class="view hidden" id="view-movies">
+    <div class="catalog">
+      <aside class="cat-side">
+        <div class="cat-side-head">
+          <h3>Categorias</h3>
+          <input type="text" class="mini-input" id="movieCatFilter" placeholder="Filtrar…">
+        </div>
+        <div class="cat-list" id="movieCats"></div>
+      </aside>
+      <div class="cat-main">
+        <div class="cat-head">
+          <h2 id="movieTitle">Filmes</h2>
+          <div class="cat-tools">
+            <input type="text" class="mini-input wide" id="movieFilter" placeholder="Filtrar filmes…">
+            <span class="count" id="movieCount"></span>
+          </div>
+        </div>
+        <div class="grid grid-poster" id="movieGrid"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SÉRIES -->
+  <section class="view hidden" id="view-series">
+    <div class="catalog">
+      <aside class="cat-side">
+        <div class="cat-side-head">
+          <h3>Categorias</h3>
+          <input type="text" class="mini-input" id="seriesCatFilter" placeholder="Filtrar…">
+        </div>
+        <div class="cat-list" id="seriesCats"></div>
+      </aside>
+      <div class="cat-main">
+        <div class="cat-head">
+          <h2 id="seriesTitle">Séries</h2>
+          <div class="cat-tools">
+            <input type="text" class="mini-input wide" id="seriesFilter" placeholder="Filtrar séries…">
+            <span class="count" id="seriesCount"></span>
+          </div>
+        </div>
+        <div class="grid grid-poster" id="seriesGrid"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- MINHA LISTA -->
+  <section class="view hidden" id="view-mylist">
+    <div class="page-pad">
+      <div class="rows" id="mylistRows"></div>
+    </div>
+  </section>
+
+  <!-- BUSCA -->
+  <section class="view hidden" id="view-search">
+    <div class="page-pad">
+      <h2 class="page-title" id="searchTitle">Buscar</h2>
+      <div class="search-tabs" id="searchTabs">
+        <button class="chip active" data-stype="all">Tudo</button>
+        <button class="chip" data-stype="live">TV ao Vivo</button>
+        <button class="chip" data-stype="movie">Filmes</button>
+        <button class="chip" data-stype="series">Séries</button>
+      </div>
+      <div class="grid grid-poster" id="searchGrid"></div>
+      <div class="empty hidden" id="searchEmpty">Nenhum resultado encontrado.</div>
+    </div>
+  </section>
+
+  <!-- FONTES -->
+  <section class="view hidden" id="view-sources">
+    <div class="page-pad narrow">
+      <h2 class="page-title">Fontes / Listas</h2>
+      <p class="page-sub">Adicione suas listas IPTV. Você pode manter várias e alternar entre elas.</p>
+
+      <div class="source-add">
+        <div class="tabs" id="srcTabs">
+          <button class="tab active" data-src="file">Arquivo .m3u</button>
+          <button class="tab" data-src="url">URL da lista</button>
+          <button class="tab" data-src="xtream">Xtream Codes</button>
+        </div>
+
+        <div class="tabpanel" id="srcPanel-file">
+          <div class="dropzone" id="dropzone">
+            <svg viewBox="0 0 24 24" class="dz-icon"><path d="M19 13v5H5v-5H3v7h18v-7zM13 3h-2v8H7l5 5 5-5h-4z"/></svg>
+            <p><strong>Arraste seu arquivo .m3u aqui</strong></p>
+            <p class="muted">ou</p>
+            <button class="btn btn-play" id="pickFileBtn">Escolher arquivo</button>
+          </div>
+        </div>
+
+        <div class="tabpanel hidden" id="srcPanel-url">
+          <label class="field">
+            <span>Nome da lista</span>
+            <input type="text" id="urlName" placeholder="Minha lista">
+          </label>
+          <label class="field">
+            <span>URL do .m3u</span>
+            <input type="text" id="urlValue" placeholder="http://servidor.com/get.php?username=…&type=m3u_plus" spellcheck="false">
+          </label>
+          <button class="btn btn-play" id="addUrlBtn">Carregar lista</button>
+        </div>
+
+        <div class="tabpanel hidden" id="srcPanel-xtream">
+          <label class="field">
+            <span>Nome</span>
+            <input type="text" id="xtName" placeholder="Meu provedor">
+          </label>
+          <label class="field">
+            <span>Servidor (host:porta)</span>
+            <input type="text" id="xtHost" placeholder="http://meuservidor.com:8080" spellcheck="false">
+          </label>
+          <div class="field-row">
+            <label class="field">
+              <span>Usuário</span>
+              <input type="text" id="xtUser" spellcheck="false" autocomplete="off">
+            </label>
+            <label class="field">
+              <span>Senha</span>
+              <input type="password" id="xtPass" autocomplete="off">
+            </label>
+          </div>
+          <button class="btn btn-play" id="addXtreamBtn">Conectar</button>
+          <p class="hint">As credenciais ficam salvas apenas neste computador, no arquivo de configuração do app.</p>
+        </div>
+      </div>
+
+      <h3 class="section-title">Listas salvas</h3>
+      <div class="source-list" id="sourceList"></div>
+    </div>
+  </section>
+
+  <!-- CONFIGURAÇÕES -->
+  <section class="view hidden" id="view-settings">
+    <div class="page-pad narrow">
+      <h2 class="page-title">Configurações</h2>
+
+      <div class="setting">
+        <div>
+          <strong>User-Agent</strong>
+          <p class="muted">Alguns servidores só liberam o stream para players conhecidos.</p>
+        </div>
+        <input type="text" id="setUA" class="mini-input wide" spellcheck="false">
+      </div>
+
+      <div class="setting">
+        <div>
+          <strong>Buffer do stream ao vivo</strong>
+          <p class="muted">Maior = menos travadas, porém mais atraso.</p>
+        </div>
+        <select id="setBuffer" class="mini-input">
+          <option value="low">Baixo (mais responsivo)</option>
+          <option value="normal" selected>Normal</option>
+          <option value="high">Alto (mais estável)</option>
+        </select>
+      </div>
+
+      <div class="setting">
+        <div>
+          <strong>Retomar de onde parei</strong>
+          <p class="muted">Salva a posição de filmes e episódios.</p>
+        </div>
+        <label class="switch"><input type="checkbox" id="setResume" checked><span></span></label>
+      </div>
+
+      <div class="setting">
+        <div>
+          <strong>Manter a tela ligada</strong>
+          <p class="muted">Impede o monitor de dormir durante a reprodução.</p>
+        </div>
+        <label class="switch"><input type="checkbox" id="setAwake" checked><span></span></label>
+      </div>
+
+      <div class="setting">
+        <div>
+          <strong>Limpar cache de listas</strong>
+          <p class="muted">Força o recarregamento completo na próxima abertura.</p>
+        </div>
+        <button class="btn btn-ghost" id="clearCacheBtn">Limpar cache</button>
+      </div>
+
+      <div class="setting">
+        <div>
+          <strong>Apagar histórico</strong>
+          <p class="muted">Remove "Continuar assistindo" e os itens vistos recentemente.</p>
+        </div>
+        <button class="btn btn-ghost" id="clearHistoryBtn">Apagar</button>
+      </div>
+
+      <h3 class="section-title">Atalhos de teclado</h3>
+      <div class="keys">
+        <div><kbd>Espaço</kbd> / <kbd>K</kbd> Play / pausa</div>
+        <div><kbd>←</kbd> <kbd>→</kbd> Voltar / avançar 10s</div>
+        <div><kbd>↑</kbd> <kbd>↓</kbd> Volume — ou trocar de canal ao vivo</div>
+        <div><kbd>F</kbd> Tela cheia</div>
+        <div><kbd>M</kbd> Mudo</div>
+        <div><kbd>Esc</kbd> Sair do player</div>
+        <div><kbd>Ctrl</kbd>+<kbd>K</kbd> Buscar</div>
+      </div>
+
+      <p class="about" id="aboutInfo"></p>
+    </div>
+  </section>
+
+</main>
+
+<!-- ============ ONBOARDING ============ -->
+<div id="onboarding" class="overlay hidden">
+  <div class="onb">
+    <div class="onb-brand"><span class="brand-mark">BISHOP</span><span class="brand-tv">TV</span></div>
+    <h1>Bem-vindo</h1>
+    <p>Adicione sua primeira lista para começar a assistir.</p>
+    <div class="onb-cards">
+      <button class="onb-card" data-onb="file">
+        <svg viewBox="0 0 24 24"><path d="M19 13v5H5v-5H3v7h18v-7zM13 3h-2v8H7l5 5 5-5h-4z"/></svg>
+        <strong>Arquivo .m3u</strong>
+        <span>Abrir uma lista salva no computador</span>
+      </button>
+      <button class="onb-card" data-onb="url">
+        <svg viewBox="0 0 24 24"><path d="M3.9 12a5 5 0 015-5h3v2h-3a3 3 0 100 6h3v2h-3a5 5 0 01-5-5zm5.1-1h6v2H9zm3-4h3a5 5 0 010 10h-3v-2h3a3 3 0 100-6h-3z"/></svg>
+        <strong>URL da lista</strong>
+        <span>Colar o link que o provedor enviou</span>
+      </button>
+      <button class="onb-card" data-onb="xtream">
+        <svg viewBox="0 0 24 24"><path d="M12 2a5 5 0 015 5v2h1a2 2 0 012 2v9a2 2 0 01-2 2H6a2 2 0 01-2-2v-9a2 2 0 012-2h1V7a5 5 0 015-5zm0 2a3 3 0 00-3 3v2h6V7a3 3 0 00-3-3z"/></svg>
+        <strong>Xtream Codes</strong>
+        <span>Host, usuário e senha</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ DETALHE (modal estilo Netflix) ============ -->
+<div id="detail" class="overlay hidden">
+  <div class="detail-card">
+    <button class="detail-close" id="detailClose">
+      <svg viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+    </button>
+    <div class="detail-hero">
+      <div class="detail-bg" id="detailBg"></div>
+      <div class="detail-fade"></div>
+      <div class="detail-hero-body">
+        <h2 id="detailTitle"></h2>
+        <div class="detail-actions">
+          <button class="btn btn-play" id="detailPlay">
+            <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg> <span id="detailPlayLabel">Assistir</span>
+          </button>
+          <button class="round-btn" id="detailFav" title="Minha Lista">
+            <svg viewBox="0 0 24 24"><path d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6z"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+    <div class="detail-body">
+      <div class="detail-left">
+        <div class="detail-meta" id="detailMeta"></div>
+        <p class="detail-plot" id="detailPlot"></p>
+      </div>
+      <div class="detail-right" id="detailFacts"></div>
+    </div>
+    <div class="detail-episodes hidden" id="detailEpisodes">
+      <div class="ep-head">
+        <h3>Episódios</h3>
+        <select id="seasonSelect" class="mini-input"></select>
+      </div>
+      <div class="ep-list" id="epList"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ PLAYER ============ -->
+<div id="player" class="hidden">
+  <video id="video" playsinline></video>
+
+  <div class="pl-loading hidden" id="plLoading"><div class="spinner"></div><span id="plLoadingText">Conectando…</span></div>
+  <div class="pl-error hidden" id="plError">
+    <h3>Não foi possível reproduzir</h3>
+    <p id="plErrorMsg"></p>
+    <div class="pl-error-actions">
+      <button class="btn btn-play" id="plRetry">Tentar de novo</button>
+      <button class="btn btn-ghost" id="plAltFormat">Tentar outro formato</button>
+      <button class="btn btn-ghost" id="plCloseErr">Voltar</button>
+    </div>
+  </div>
+
+  <div class="pl-ui" id="plUI">
+    <div class="pl-top">
+      <button class="icon-btn big" id="plBack" title="Voltar (Esc)">
+        <svg viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20z"/></svg>
+      </button>
+      <div class="pl-titles">
+        <div class="pl-title" id="plTitle"></div>
+        <div class="pl-sub" id="plSub"></div>
+      </div>
+      <div class="pl-top-right">
+        <button class="icon-btn" id="plFav" title="Minha Lista">
+          <svg viewBox="0 0 24 24"><path d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6z"/></svg>
+        </button>
+        <button class="icon-btn" id="plZapBtn" title="Lista de canais (C)">
+          <svg viewBox="0 0 24 24"><path d="M4 6h16v2H4zm0 5h16v2H4zm0 5h10v2H4z"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="pl-center">
+      <button class="pl-bigplay" id="plBigPlay">
+        <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+      </button>
+    </div>
+
+    <div class="pl-bottom">
+      <div class="pl-seek" id="plSeek">
+        <div class="pl-seek-buf" id="plSeekBuf"></div>
+        <div class="pl-seek-played" id="plSeekPlayed"></div>
+        <div class="pl-seek-knob" id="plSeekKnob"></div>
+        <input type="range" id="plSeekInput" min="0" max="1000" value="0" step="1">
+      </div>
+      <div class="pl-controls">
+        <button class="icon-btn" id="plPlay"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></button>
+        <button class="icon-btn vod-only" id="plBack10"><svg viewBox="0 0 24 24"><path d="M12 5V1L7 6l5 5V7a6 6 0 11-6 6H4a8 8 0 108-8z"/></svg></button>
+        <button class="icon-btn vod-only" id="plFwd10"><svg viewBox="0 0 24 24"><path d="M12 5V1l5 5-5 5V7a6 6 0 106 6h2a8 8 0 11-8-8z"/></svg></button>
+        <div class="pl-vol">
+          <button class="icon-btn" id="plMute"><svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9zm13.5 3a4.5 4.5 0 00-2.5-4v8a4.5 4.5 0 002.5-4z"/></svg></button>
+          <input type="range" id="plVol" min="0" max="100" value="100">
+        </div>
+        <div class="pl-time"><span id="plCur">00:00</span><span class="sep" id="plSep"> / </span><span id="plDur">00:00</span></div>
+        <div class="pl-live hidden" id="plLiveBadge"><span class="dot"></span> AO VIVO</div>
+        <div class="pl-spacer"></div>
+        <div class="pl-menu-wrap">
+          <button class="icon-btn" id="plAudioBtn" title="Áudio e legendas">
+            <svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 00-9 9v7h4v-7H5a7 7 0 1114 0h-2v7h2a2 2 0 002-2v-5a9 9 0 00-9-9z"/></svg>
+          </button>
+          <div class="pl-menu hidden" id="plAudioMenu"></div>
+        </div>
+        <div class="pl-menu-wrap">
+          <button class="icon-btn" id="plQualityBtn" title="Qualidade">
+            <svg viewBox="0 0 24 24"><path d="M3 17h4v-7H3zm7 0h4V5h-4zm7 0h4v-4h-4z"/></svg>
+          </button>
+          <div class="pl-menu hidden" id="plQualityMenu"></div>
+        </div>
+        <button class="icon-btn" id="plPip" title="Picture-in-picture">
+          <svg viewBox="0 0 24 24"><path d="M19 11h-8v6h8zm2-8H3a2 2 0 00-2 2v14a2 2 0 002 2h18a2 2 0 002-2V5a2 2 0 00-2-2zm0 16H3V4.98h18z"/></svg>
+        </button>
+        <button class="icon-btn" id="plFull" title="Tela cheia (F)">
+          <svg viewBox="0 0 24 24"><path d="M7 14H5v5h5v-2H7zm-2-4h2V7h3V5H5zm12 7h-3v2h5v-5h-2zM14 5v2h3v3h2V5z"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Zapping lateral -->
+  <aside class="zap hidden" id="zap">
+    <div class="zap-head">
+      <input type="text" id="zapFilter" class="mini-input wide" placeholder="Buscar canal…">
+      <button class="icon-btn" id="zapClose"><svg viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg></button>
+    </div>
+    <div class="zap-list" id="zapList"></div>
+  </aside>
+</div>
+
+<!-- ============ TOASTS + LOADER GLOBAL ============ -->
+<div id="toasts"></div>
+<div id="globalLoader" class="hidden">
+  <div class="gl-box">
+    <div class="spinner big"></div>
+    <div class="gl-text" id="glText">Carregando…</div>
+    <div class="gl-sub" id="glSub"></div>
+  </div>
+</div>
+
+<script src="js/util.js"></script>
+<script src="js/store.js"></script>
+<script src="js/m3u.js"></script>
+<script src="js/xtream.js"></script>
+<script src="js/library.js"></script>
+<script src="js/player.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
