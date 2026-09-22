@@ -78,8 +78,8 @@ const UI = {
       <div class="card ${this.shapeClass(shape)}" data-key="${U.esc(item.key)}" data-type="${U.esc(item.type || '')}">
         ${badge}
         ${art}
-        <button class="card-fav ${isFav ? 'on' : ''}" data-fav="${U.esc(favKey)}" title="Minha Lista">
-          <svg viewBox="0 0 24 24"><path d="${isFav ? 'M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z' : 'M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6z'}"/></svg>
+        <button class="card-fav ${isFav ? 'on' : ''}" data-fav="${U.esc(favKey)}" title="Favoritos">
+          <svg viewBox="0 0 24 24"><path d="${U.heartPath(isFav)}"/></svg>
         </button>
         ${progress}
         <div class="card-hover">
@@ -148,15 +148,9 @@ const UI = {
   },
 
   refreshFavUI() {
-    $$('.card-fav').forEach((b) => {
-      const on = Store.isFav(b.dataset.fav);
-      b.classList.toggle('on', on);
-      b.querySelector('path').setAttribute('d', on
-        ? 'M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z'
-        : 'M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6z');
-    });
+    $$('.card-fav').forEach((b) => U.setHeart(b, Store.isFav(b.dataset.fav)));
     if (this.detailItem) {
-      $('#detailFav').classList.toggle('on', Store.isFav(this.detailItem.seriesKey || this.detailItem.key));
+      U.setHeart($('#detailFav'), Store.isFav(this.detailItem.seriesKey || this.detailItem.key));
     }
   },
 
@@ -325,7 +319,7 @@ const UI = {
     $('#detailBg').style.backgroundImage = (item.backdrop || item.logo)
       ? `url("${item.backdrop || item.logo}")`
       : 'linear-gradient(120deg,#2a1116,#12121a)';
-    $('#detailFav').classList.toggle('on', Store.isFav(item.seriesKey || item.key));
+    U.setHeart($('#detailFav'), Store.isFav(item.seriesKey || item.key));
     $('#detailPlot').textContent = item.plot || '';
     $('#detailEpisodes').classList.add('hidden');
     $('#detailPlayLabel').textContent = item.type === 'series' ? 'Assistir T1 E1' : 'Assistir';

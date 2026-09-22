@@ -27,10 +27,12 @@
       "main.js",
       "preload.js",
       "src/**/*",
+      "!src/logo.png",
       "node_modules/hls.js/dist/hls.min.js",
       "node_modules/mpegts.js/dist/mpegts.js"
     ],
     "win": {
+      "icon": "src/img/logo.png",
       "target": [
         {
           "target": "nsis",

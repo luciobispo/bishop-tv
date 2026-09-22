@@ -57,6 +57,20 @@ const App = {
     }
   },
 
+  /**
+   * Tira a abertura quando o app está pronto, mas nunca antes de a animação
+   * terminar — com cache a lista carrega em milissegundos e ela mal apareceria.
+   */
+  hideSplash() {
+    const el = $('#splash');
+    if (!el) return;
+    const MIN_MS = 1900;
+    setTimeout(() => {
+      el.classList.add('out');
+      setTimeout(() => el.remove(), 600);
+    }, Math.max(0, MIN_MS - performance.now()));
+  },
+
   showOnboarding() { $('#onboarding').classList.remove('hidden'); },
   hideOnboarding() { $('#onboarding').classList.add('hidden'); },
 
@@ -131,7 +145,7 @@ const App = {
       const card = el.closest('.card');
       const item = Lib.get(card.dataset.key) || Store.data.favorites[el.dataset.fav];
       if (!item) return;
-      Store.toggleFav({ ...item, key: el.dataset.fav });
+      U.favToast(Store.toggleFav({ ...item, key: el.dataset.fav }));
       UI.refreshFavUI();
       if (UI.view === 'mylist') UI.renderMyList();
     });
@@ -190,7 +204,7 @@ const App = {
     $('#detailFav').onclick = () => {
       const it = UI.detailItem;
       if (!it) return;
-      Store.toggleFav({ ...it, key: it.seriesKey || it.key });
+      U.favToast(Store.toggleFav({ ...it, key: it.seriesKey || it.key }));
       UI.refreshFavUI();
     };
 
@@ -412,5 +426,5 @@ window.addEventListener('DOMContentLoaded', () => {
     console.error(err);
     U.loader(false);
     U.toast('Erro na inicialização: ' + (err.message || err), 'warn');
-  });
+  }).finally(() => App.hideSplash());
 });

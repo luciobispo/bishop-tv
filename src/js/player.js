@@ -634,8 +634,7 @@ const Player = {
 
   syncFav() {
     if (!this.item) return;
-    const on = Store.isFav(this.item.seriesKey || this.item.key);
-    $('#plFav').classList.toggle('on', on);
+    U.setHeart($('#plFav'), Store.isFav(this.item.seriesKey || this.item.key));
   },
 
   /* ------------------------------------------------------------------
@@ -732,7 +731,7 @@ const Player = {
     $('#plCloseErr').onclick = () => this.close();
     $('#plFav').onclick = () => {
       const target = this.item.type === 'episode' && this.item.seriesRef ? this.item.seriesRef : this.item;
-      Store.toggleFav(target);
+      U.favToast(Store.toggleFav(target));
       this.syncFav();
       if (typeof UI !== 'undefined') UI.refreshFavUI();
     };
