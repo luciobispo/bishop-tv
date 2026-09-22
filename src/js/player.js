@@ -119,23 +119,33 @@ const Player = {
     $('#plQualityBtn').classList.add('hidden');
     $('#plAudioBtn').classList.add('hidden');
 
+    const gen = ++this._gen;
     try {
       const kind = await this.detectKind(url);
-      if (kind.error) throw new Error(kind.error);
-
-      if (kind.type === 'hls') {
-        await this.playHls(kind.url, resumeAt);
-      } else if (kind.type === 'mpegts') {
-        const ok = await this.playMpegts(kind.url);
-        if (!ok) {
-          if (!this.libsReady.mpegts) throw new Error(this.LIB_MISSING.replace('{lib}', 'mpegts.js'));
-          await this.playNative(kind.url, resumeAt);
-        }
-      } else {
-        await this.playNative(kind.url, resumeAt);
-      }
+      if (gen !== this._gen) return;  // o usuário já trocou de canal
+      await this.playKind(kind, resumeAt);
     } catch (err) {
       this.showError(String(err && err.message ? err.message : err));
+    }
+  },
+
+  /** Incrementado a cada attach, para descartar respostas atrasadas. */
+  _gen: 0,
+
+  async playKind(kind, resumeAt) {
+    if (kind.error) throw new Error(kind.error);
+    this._ignoreErrors = false;
+
+    if (kind.type === 'hls') {
+      await this.playHls(kind.url, resumeAt);
+    } else if (kind.type === 'mpegts') {
+      const ok = await this.playMpegts(kind.url, resumeAt);
+      if (!ok) {
+        if (!this.libsReady.mpegts) throw new Error(this.LIB_MISSING.replace('{lib}', 'mpegts.js'));
+        await this.playNative(kind.url, resumeAt);
+      }
+    } else {
+      await this.playNative(kind.url, resumeAt);
     }
   },
 
@@ -160,6 +170,10 @@ const Player = {
     this.showLoading(true, 'Identificando o stream…');
     const p = await window.bishop.probe(url);
 
+    return this.kindFromProbe(url, p);
+  },
+
+  kindFromProbe(url, p) {
     if (!p.ok) {
       return { error: `Não foi possível conectar ao servidor (${p.error}).` };
     }
@@ -168,11 +182,17 @@ const Player = {
     }
 
     const ct = p.contentType || '';
+    const target = p.finalUrl || url;
 
     // Muitos painéis devolvem HTTP 200 com uma página HTML de erro.
-    if (ct.includes('text/html')) {
+    if (ct.includes('text/html') || p.sniff === 'html') {
       return { error: this.htmlError(p.snippet) };
     }
+
+    // Os bytes reais valem mais que o content-type ou a extensão.
+    if (p.sniff === 'hls') return { type: 'hls', url: target };
+    if (p.sniff === 'ts' || p.sniff === 'flv') return { type: 'mpegts', url: target };
+    if (p.sniff === 'mp4' || p.sniff === 'mkv') return { type: 'native', url: target };
     if (ct.includes('mpegurl') || ct.includes('mpeg-url') || /^\s*#EXTM3U/.test(p.snippet || '')) {
       return { type: 'hls', url: p.finalUrl || url };
     }
@@ -296,7 +316,8 @@ const Player = {
     throw new Error(this.LIB_MISSING.replace('{lib}', 'hls.js'));
   },
 
-  async playMpegts(url) {
+  async playMpegts(url, resumeAt) {
+    const gen = this._gen;
     const ok = await this.loadLib('mpegts');
     if (!ok || !window.mpegts || !window.mpegts.isSupported()) return false;
 
@@ -323,13 +344,35 @@ const Player = {
         try { p.pause(); p.unload(); p.detachMediaElement(); p.destroy(); } catch {}
         if (this.mpegts === p) this.mpegts = null;
       }, 0);
-      this.diagnose(url, `Falha no stream (${detail || type}).`)
-        .then((msg) => this.showError(msg));
+      const fallback = `Falha no stream (${detail || type}).`;
+      if (detail === window.mpegts.ErrorDetails.MEDIA_FORMAT_UNSUPPORTED) {
+        this.switchEngine(url, resumeAt, gen, fallback);
+      } else {
+        this.diagnose(url, fallback).then((msg) => this.showError(msg));
+      }
     });
     p.attachMediaElement(this.video);
     p.load();
     this.start();
     return true;
+  },
+
+  /**
+   * O mpegts.js recebeu algo que não é MPEG-TS — tipicamente um ".ts" que o
+   * painel redireciona para um MP4. Pergunta ao servidor o que ele entrega
+   * de fato e troca de motor, em vez de mostrar "FormatUnsupported".
+   */
+  async switchEngine(url, resumeAt, gen, fallback) {
+    const p = await window.bishop.probe(url);
+    if (gen !== this._gen) return;
+    const kind = this.kindFromProbe(url, p);
+    if (kind.error) return this.showError(kind.error);
+    if (kind.type === 'mpegts') return this.showError(`${fallback} O canal pode estar fora do ar.`);
+    try {
+      await this.playKind(kind, resumeAt);
+    } catch (err) {
+      this.showError(String(err && err.message ? err.message : err));
+    }
   },
 
   async playNative(url, resumeAt) {

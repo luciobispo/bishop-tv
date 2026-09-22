@@ -14,10 +14,15 @@ if [ -z "$DISPLAY" ]; then
   export DISPLAY=:99
   Xvfb :99 -screen 0 "${SCREEN_RESOLUTION}x24" -nolisten tcp &
 
+  # Na primeira subida o Xvfb pode levar vários segundos (cache de fontes).
   i=0
-  while [ ! -e /tmp/.X11-unix/X99 ] && [ "$i" -lt 50 ]; do
-    sleep 0.1
+  while [ ! -e /tmp/.X11-unix/X99 ]; do
     i=$((i + 1))
+    if [ "$i" -gt 300 ]; then
+      echo "BishopTV: o Xvfb não subiu em 30s" >&2
+      exit 1
+    fi
+    sleep 0.1
   done
 
   # Gerenciador de janelas mínimo: sem ele, maximizar/tela cheia não funcionam.

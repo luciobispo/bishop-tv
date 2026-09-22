@@ -56,10 +56,12 @@ const UI = {
     if (item.type === 'live') sub = U.esc(item.group || '');
     else if (item.type === 'series') sub = item.epCount ? `${item.epCount} episódios` : (item.year || '');
     else sub = [item.year, item.rating ? '★ ' + Number(item.rating).toFixed(1) : ''].filter(Boolean).join(' · ');
+    if (item._sub) sub = U.esc(item._sub);
 
     let badge = '';
     if (item.type === 'live') badge = '<span class="card-badge live"><span class="dot"></span>Ao vivo</span>';
     else if (item.type === 'series') badge = '<span class="card-badge">Série</span>';
+    else if (Store.isWatched(item.key)) badge = '<span class="card-badge seen">✓ Assistido</span>';
 
     let progress = '';
     const p = Store.getProgress(item.key);
@@ -166,6 +168,23 @@ const UI = {
     const cont = Store.continueList().map((p) => ({ ...(Lib.get(p.key) || {}), ...p, _progress: p }));
     const rows = [];
     if (cont.length) rows.push({ id: 'c', title: 'Continuar assistindo', items: cont, shape: 'wide' });
+
+    const date = (at) => new Date(at).toLocaleDateString('pt-BR');
+    Store.linkHistory((k) => Lib.get(k));
+    const seenSeries = Store.watchedSeries().map((s) => {
+      const h = s.last;
+      const base = Lib.get(s.seriesKey) ||
+        { key: s.seriesKey, type: 'series', name: h.seriesName, title: h.seriesName, logo: h.seriesLogo || h.logo };
+      const ep = h.season != null && h.episode != null ? `T${h.season} E${h.episode}` : (h.name || 'episódio');
+      return { ...base, _sub: `${h.done ? 'Viu' : 'Parou em'} ${ep} · ${date(h.at)}` };
+    });
+    if (seenSeries.length) rows.push({ id: 'hs', title: 'Séries que você assistiu', items: seenSeries, shape: 'poster' });
+
+    const seenMovies = Store.watchedMovies().map((h) => ({
+      ...(Lib.get(h.key) || h),
+      _sub: (h.done ? 'Assistido em ' : 'Começou em ') + date(h.at)
+    }));
+    if (seenMovies.length) rows.push({ id: 'hm', title: 'Filmes que você assistiu', items: seenMovies, shape: 'poster' });
     if (favs.length) {
       const g = { live: [], movie: [], series: [] };
       favs.forEach((f) => (g[f.type] || g.movie).push(f));
@@ -379,28 +398,57 @@ const UI = {
     $('#seasonSelect').innerHTML = nums
       .map((n) => `<option value="${n}">Temporada ${n} (${seasons[n].length})</option>`).join('');
     $('#detailEpisodes').classList.remove('hidden');
-    this.renderEpisodes(nums[0]);
 
-    const first = seasons[nums[0]][0];
-    if (first) $('#detailPlayLabel').textContent = `Assistir T${first.season || nums[0]} E${first.episode || 1}`;
+    // Abre na temporada de onde o usuário parou.
+    const target = this.resumeTarget(seasons);
+    $('#seasonSelect').value = target.season;
+    this.renderEpisodes(target.season);
+
+    const ep = target.ep;
+    const verb = target.resumed ? 'Continuar' : 'Assistir';
+    $('#detailPlayLabel').textContent = `${verb} T${ep.season || target.season} E${ep.episode || 1}`;
+  },
+
+  /**
+   * Episódio que o botão principal da série deve tocar: o último visto, ou o
+   * seguinte se ele já foi concluído; sem histórico, o primeiro.
+   */
+  resumeTarget(seasons) {
+    const nums = Object.keys(seasons).sort((a, b) => Number(a) - Number(b));
+    const flat = [];
+    for (const n of nums) for (const ep of seasons[n]) flat.push({ ep, season: n });
+
+    let last = -1, lastAt = 0;
+    flat.forEach((x, i) => {
+      const h = Store.getHistory(x.ep.key);
+      const p = Store.getProgress(x.ep.key);
+      const at = Math.max(h ? h.at : 0, p ? p.at : 0);
+      if (at > lastAt) { lastAt = at; last = i; }
+    });
+
+    if (last === -1) return { ...flat[0], resumed: false };
+    if (Store.isWatched(flat[last].ep.key) && flat[last + 1]) return { ...flat[last + 1], resumed: true };
+    return { ...flat[last], resumed: true };
   },
 
   renderEpisodes(seasonNum) {
     const eps = (this.detailSeasons || {})[seasonNum] || [];
     $('#epList').innerHTML = eps.map((ep) => {
       const p = Store.getProgress(ep.key);
-      const bar = p && p.dur
+      const seen = Store.isWatched(ep.key);
+      const pct = p && p.dur ? Math.min(100, (p.pos / p.dur) * 100) : seen ? 100 : 0;
+      const bar = pct
         ? `<div style="height:3px;background:rgba(255,255,255,.2);border-radius:2px;margin-top:6px">
-             <div style="height:100%;width:${Math.min(100, (p.pos / p.dur) * 100).toFixed(0)}%;background:var(--accent);border-radius:2px"></div>
+             <div style="height:100%;width:${pct.toFixed(0)}%;background:var(--accent);border-radius:2px"></div>
            </div>` : '';
       return `
-        <div class="ep-item" data-ep="${U.esc(String(ep.key))}" data-season="${U.esc(String(seasonNum))}">
-          <div class="ep-num">${ep.episode || ''}</div>
+        <div class="ep-item ${seen ? 'seen' : ''}" data-ep="${U.esc(String(ep.key))}" data-season="${U.esc(String(seasonNum))}">
+          <div class="ep-num">${seen ? '✓' : (ep.episode || '')}</div>
           <div>${ep.thumb
             ? `<img class="ep-thumb" src="${U.esc(ep.thumb)}" loading="lazy" onerror="this.style.visibility='hidden'">`
             : '<div class="ep-thumb"></div>'}</div>
           <div style="min-width:0">
-            <div class="ep-title">${U.esc(ep.title || ep.name)}</div>
+            <div class="ep-title">${U.esc(ep.title || ep.name)}${seen ? ' <span class="ep-seen">Assistido</span>' : ''}</div>
             ${ep.plot ? `<div class="ep-plot">${U.esc(ep.plot)}</div>` : ''}
             ${bar}
           </div>

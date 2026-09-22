@@ -271,6 +271,7 @@ input, select, button, textarea { font-family: inherit; color: inherit; }
 }
 .card-badge.live { display: flex; align-items: center; gap: 4px; }
 .card-badge .dot { width: 5px; height: 5px; border-radius: 50%; background: #fff; animation: pulse 1.6s infinite; }
+.card-badge.seen { background: rgba(20,20,26,.88); color: #46d369; }
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .25; } }
 
 .card-progress { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: rgba(255,255,255,.22); z-index: 3; }
@@ -486,6 +487,11 @@ kbd {
 }
 .ep-item:hover { background: rgba(255,255,255,.05); }
 .ep-num { font-size: 19px; color: var(--txt-faint); text-align: center; }
+.ep-item.seen .ep-num { color: #46d369; }
+.ep-seen {
+  margin-left: 6px; font-size: 10px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase;
+  color: #46d369; vertical-align: middle;
+}
 .ep-thumb { aspect-ratio: 16/9; border-radius: 5px; object-fit: cover; background: #202029; width: 100%; }
 .ep-title { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
 .ep-plot { font-size: 12.5px; color: var(--txt-faint); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }

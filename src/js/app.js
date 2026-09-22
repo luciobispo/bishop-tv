@@ -116,7 +116,8 @@ const App = {
       const item = Lib.get(el.dataset.key);
       if (!item) {
         // Item salvo cujo catálogo mudou (favorito/progresso órfão)
-        const fallback = Store.data.favorites[el.dataset.key] || Store.data.progress[el.dataset.key];
+        const fallback = Store.data.favorites[el.dataset.key] || Store.data.progress[el.dataset.key] ||
+          Store.data.history[el.dataset.key];
         if (fallback && fallback.url) return UI.playItem({ ...fallback, key: el.dataset.key });
         return U.toast('Este item não está mais disponível nesta lista.', 'warn');
       }
@@ -179,16 +180,8 @@ const App = {
         const seasons = UI.detailSeasons || {};
         const nums = Object.keys(seasons).sort((a, b) => Number(a) - Number(b));
         if (!nums.length) return U.toast('Episódios ainda carregando…');
-        // Retoma o episódio mais recente, se houver progresso salvo.
-        let target = null, targetSeason = nums[0];
-        for (const n of nums) {
-          for (const ep of seasons[n]) {
-            const p = Store.getProgress(ep.key);
-            if (p && (!target || p.at > target._at)) { target = ep; target._at = p.at; targetSeason = n; }
-          }
-        }
-        const chosen = target || seasons[nums[0]][0];
-        UI.playEpisode(chosen.key, targetSeason);
+        const target = UI.resumeTarget(seasons);
+        UI.playEpisode(target.ep.key, target.season);
       } else {
         UI.playItem(it);
       }

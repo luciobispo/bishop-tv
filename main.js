@@ -191,6 +191,49 @@ const NET_ERRORS = {
   ERR_NETWORK_CHANGED: 'a rede mudou durante a conexão'
 };
 
+/**
+ * Identifica o formato pelos primeiros bytes. O content-type e a extensão
+ * mentem com frequência: há painéis que servem um ".ts" redirecionando para
+ * um arquivo MP4.
+ */
+function sniffFormat(buf) {
+  if (!buf || !buf.length) return '';
+  if (buf.length >= 8 && buf.toString('latin1', 4, 8) === 'ftyp') return 'mp4';
+  if (buf[0] === 0x1a && buf[1] === 0x45 && buf[2] === 0xdf && buf[3] === 0xa3) return 'mkv';
+  if (buf.toString('latin1', 0, 3) === 'FLV') return 'flv';
+  // Mesma varredura do mpegts.js: sync byte 0x47 em três pacotes seguidos.
+  for (const size of [188, 192, 204]) {
+    const end = Math.min(1000, buf.length - 2 * size);
+    for (let i = 0; i < end; i++) {
+      if (buf[i] === 0x47 && buf[i + size] === 0x47 && buf[i + 2 * size] === 0x47) return 'ts';
+    }
+  }
+  const head = buf.toString('utf8', 0, Math.min(buf.length, 512)).replace(/^﻿/, '').trimStart();
+  if (head.startsWith('#EXTM3U')) return 'hls';
+  if (head.startsWith('<')) return 'html';
+  return '';
+}
+
+/** Lê no máximo `limit` bytes do corpo e fecha a conexão. */
+async function readHead(res, limit) {
+  if (!res.body) return Buffer.alloc(0);
+  const reader = res.body.getReader();
+  const chunks = [];
+  let total = 0;
+  try {
+    while (total < limit) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      chunks.push(Buffer.from(value));
+      total += value.byteLength;
+    }
+  } finally {
+    // Um stream ao vivo pode ignorar o Range e transmitir indefinidamente.
+    try { await reader.cancel(); } catch {}
+  }
+  return Buffer.concat(chunks).subarray(0, limit);
+}
+
 function hostOf(url) {
   try { return new URL(url).host; } catch { return String(url || '').slice(0, 60); }
 }
@@ -310,15 +353,12 @@ function registerIpc() {
         headers: { 'User-Agent': currentUA, 'Accept': '*/*', 'Range': 'bytes=0-8191' }
       });
       const contentType = (res.headers.get('content-type') || '').toLowerCase();
-      let snippet = '';
-      // Só lemos o corpo de respostas textuais: um stream ao vivo pode
-      // ignorar o Range e transmitir indefinidamente.
-      if (/text\/|json|mpegurl|mpeg-url|x-scpls/.test(contentType)) {
-        snippet = (await res.text()).slice(0, 6000);
-      } else {
-        try { if (res.body) await res.body.cancel(); } catch {}
-      }
-      return { ok: true, status: res.status, contentType, finalUrl: res.url || url, snippet };
+      const head = await readHead(res, 8192);
+      const sniff = sniffFormat(head);
+      const textual = /text\/|json|mpegurl|mpeg-url|x-scpls/.test(contentType) ||
+                      sniff === 'hls' || sniff === 'html';
+      const snippet = textual ? head.toString('utf8').slice(0, 6000) : '';
+      return { ok: true, status: res.status, contentType, finalUrl: res.url || url, snippet, sniff };
     } catch (err) {
       return { ok: false, error: describeNetError(err, url) };
     } finally {
