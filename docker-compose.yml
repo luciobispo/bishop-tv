@@ -1,0 +1,24 @@
+services:
+  bishoptv:
+    build: .
+    image: bishoptv:latest
+    container_name: bishoptv
+    init: true
+    restart: unless-stopped
+    # O Chromium usa /dev/shm para vídeo; o padrão de 64 MB derruba a aba.
+    shm_size: "1gb"
+    ports:
+      # Só na máquina local: o VNC não tem senha por padrão.
+      - "127.0.0.1:6080:6080"
+    environment:
+      SCREEN_RESOLUTION: ${SCREEN_RESOLUTION:-1440x900}
+      VNC_PASSWORD: ${VNC_PASSWORD:-}
+      TZ: America/Sao_Paulo
+    volumes:
+      # Listas, credenciais Xtream, favoritos, progresso e cache das listas.
+      - bishoptv-data:/home/node/.config/BishopTV
+      # Arquivos .m3u locais, visíveis no seletor de arquivo do app.
+      - ./listas:/home/node/listas:ro
+
+volumes:
+  bishoptv-data:

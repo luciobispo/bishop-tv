@@ -1,0 +1,15 @@
+# Windows 11 + Docker Desktop (WSL2): abre o BishopTV como janela nativa, com
+# áudio, usando o WSLg em vez do noVNC.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.wslg.yml up -d
+services:
+  bishoptv:
+    environment:
+      DISPLAY: ":0"
+      WAYLAND_DISPLAY: wayland-0
+      XDG_RUNTIME_DIR: /mnt/wslg/runtime-dir
+      PULSE_SERVER: /mnt/wslg/PulseServer
+    volumes:
+      - /run/desktop/mnt/host/wslg/.X11-unix:/tmp/.X11-unix
+      - /run/desktop/mnt/host/wslg:/mnt/wslg
+    ports: !reset []

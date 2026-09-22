@@ -35,6 +35,32 @@ npm run dist
 
 Sai em `dist/`: um instalador NSIS e uma versão portátil, ambos x64.
 
+## Rodar com Docker
+
+O BishopTV é um app desktop, então o container roda o Electron num display virtual e mostra a
+tela no navegador (noVNC):
+
+```bash
+docker compose up -d --build
+```
+
+Abra `http://localhost:6080/vnc.html?autoconnect=1&resize=scale`.
+
+- **Dados** (listas, credenciais, favoritos, progresso, cache) ficam no volume `bishoptv-data`,
+  montado em `/home/node/.config/BishopTV`. Sobrevivem a `down`/`up`; `docker compose down -v`
+  apaga tudo.
+- **Arquivos `.m3u`** colocados em `./listas` aparecem em `/home/node/listas` no seletor do app.
+- **Senha do VNC**: `VNC_PASSWORD=... docker compose up -d`. Sem ela, a porta só é publicada em
+  `127.0.0.1`.
+- **Resolução**: `SCREEN_RESOLUTION=1920x1080`.
+
+O noVNC **não transmite áudio**. No Windows 11 com Docker Desktop (WSL2) dá para abrir como
+janela nativa, com som, usando o WSLg:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.wslg.yml up -d --build
+```
+
 ---
 
 ## Como adicionar suas listas
