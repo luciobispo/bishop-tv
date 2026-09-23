@@ -7,6 +7,12 @@ const App = {
   async init() {
     await Store.load();
     await window.bishop.setUserAgent(Store.get('userAgent'));
+    if (window.bishop.onDnsFallback) {
+      window.bishop.onDnsFallback(() => {
+        Store.set('dnsFallback', true);  // o main liga o DoH direto nas próximas aberturas
+        U.toast('O DNS da sua rede não encontrou o servidor — usando o DNS do Google/Cloudflare.', 'ok');
+      });
+    }
 
     Player.init();
     this.bindChrome();
@@ -263,11 +269,10 @@ const App = {
       const res = await window.bishop.pickM3U();
       if (res.canceled) return;
       if (!res.ok) return U.toast(res.error || 'Não foi possível abrir o arquivo', 'warn');
-      await this.addAndLoad({
-        type: 'file',
-        name: res.name.replace(/\.[^.]+$/, ''),
-        path: res.path
-      });
+      const src = { type: 'file', name: res.name.replace(/\.[^.]+$/, ''), path: res.path };
+      // Android: o arquivo vem sem caminho no disco, só o conteúdo.
+      if (!res.path && res.data) src.content = res.data;
+      await this.addAndLoad(src);
     };
 
     const dz = $('#dropzone');

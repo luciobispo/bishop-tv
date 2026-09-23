@@ -593,7 +593,7 @@ const UI = {
     $('#setAwake').checked = !!Store.get('keepAwake');
     const info = await window.bishop.appInfo();
     $('#aboutInfo').innerHTML =
-      `BishopTV v${U.esc(info.version)} · Electron ${U.esc(info.electron)} · Chromium ${U.esc(info.chrome)}<br>` +
+      `BishopTV v${U.esc(info.version)} · ${U.esc(info.platform || 'Electron ' + info.electron)} · Chromium ${U.esc(info.chrome)}<br>` +
       `Dados salvos em: ${U.esc(info.userData)}<br><br>` +
       `Este app apenas reproduz as listas que você fornece — ele não inclui, hospeda nem distribui nenhum conteúdo.`;
   }

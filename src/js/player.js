@@ -74,6 +74,9 @@ const Player = {
     this.context = opts.list ? { list: opts.list, index: opts.index || 0 } : null;
     this.isLive = item.type === 'live';
     this.triedAlt = false;
+    this._dnsRetried = false;
+
+    if (window.bishop.nativePlayer) return this.playExternal(item, opts);
 
     $('#player').classList.remove('hidden');
     this.open = true;
@@ -95,6 +98,35 @@ const Player = {
     await this.attach(item.url, opts.resumeAt);
     this.showUI();
     this.startProgressTimer();
+  },
+
+  /**
+   * Android: o vídeo roda no ExoPlayer, fora do WebView. Ao voltar, grava
+   * progresso/histórico e segue para o próximo episódio se terminou.
+   */
+  async playExternal(item, opts) {
+    Store.pushRecent(item);
+    let res = {};
+    try {
+      res = await window.bishop.nativePlayer.play({
+        url: item.url,
+        title: item.title || item.name || '',
+        subtitle: opts.subtitle || this.subtitleFor(item),
+        userAgent: Store.get('userAgent') || '',
+        startMs: Math.round((opts.resumeAt || 0) * 1000),
+        live: this.isLive
+      }) || {};
+    } catch (err) {
+      res = { error: String((err && err.message) || err) };
+    }
+
+    if (!this.isLive && res.durationMs > 0) {
+      const dur = res.durationMs / 1000;
+      Store.setProgress(item, res.ended ? dur : res.positionMs / 1000, dur);
+    }
+    if (res.error) U.toast(res.error, 'warn');
+    if (res.ended && typeof UI !== 'undefined' && UI.playNextEpisode && UI.playNextEpisode(item)) return;
+    if (typeof UI !== 'undefined') UI.refreshContinue();
   },
 
   subtitleFor(item) {
@@ -220,6 +252,13 @@ const Player = {
   async diagnose(url, fallback) {
     try {
       const p = await window.bishop.probe(url);
+      // O stream falhou porque o DNS da rede não achou o servidor; o DNS
+      // alternativo acabou de ser ligado, então basta tentar de novo.
+      if (p.ok && p.dnsFallback && !this._dnsRetried) {
+        this._dnsRetried = true;
+        setTimeout(() => this.attach(url), 0);
+        return null;
+      }
       if (!p.ok) return `${fallback} Não foi possível contatar o servidor (${p.error}).`;
       if ((p.contentType || '').includes('text/html')) return this.htmlError(p.snippet);
       if (p.status >= 400) return `O servidor respondeu ${p.status} para este item.`;
@@ -587,6 +626,7 @@ const Player = {
   },
 
   showError(msg) {
+    if (!msg) return;  // diagnose() já cuidou (ex.: nova tentativa em andamento)
     this.showLoading(false);
     $('#plErrorMsg').textContent = msg;
     $('#plError').classList.remove('hidden');

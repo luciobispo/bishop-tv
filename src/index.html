@@ -2,6 +2,8 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
+<!-- Só o Android usa: layout de ~1200px escalado para a tela, como numa TV. -->
+<meta name="viewport" content="width=1200, user-scalable=no">
 <meta http-equiv="Content-Security-Policy" content="default-src * 'unsafe-inline' 'unsafe-eval' data: blob: file:; media-src * blob: data:; img-src * data: blob:;">
 <title>BishopTV</title>
 <link rel="stylesheet" href="css/app.css">
@@ -482,6 +484,7 @@
   </div>
 </div>
 
+<script src="js/android.js"></script>
 <script src="js/util.js"></script>
 <script src="js/store.js"></script>
 <script src="js/m3u.js"></script>

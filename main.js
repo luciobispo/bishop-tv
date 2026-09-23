@@ -263,6 +263,38 @@ function describeNetError(err, url) {
 }
 
 /* ------------------------------------------------------------------ *
+ * DNS alternativo (Google / Cloudflare)
+ *
+ * Provedores de internet costumam bloquear domínios de IPTV respondendo
+ * "domínio não existe" no DNS do roteador. Quando isso acontece, o app passa
+ * a resolver nomes por DNS-over-HTTPS. A troca vale para o Chromium inteiro —
+ * listas, API Xtream e os próprios streams do player — e fica gravada nas
+ * configurações para as próximas aberturas.
+ * ------------------------------------------------------------------ */
+const DOH_SERVERS = ['https://dns.google/dns-query', 'https://cloudflare-dns.com/dns-query'];
+let dohEnabled = false;
+
+/** Liga o DoH. Devolve true só na primeira vez, para quem chamou tentar de novo. */
+async function enableDoh() {
+  if (dohEnabled) return false;
+  dohEnabled = true;
+  // "secure" e não "automatic": no automático o Chromium só usa o DoH depois
+  // de sondar os servidores em segundo plano, e a nova tentativa ainda cairia
+  // no DNS do roteador. Endereços IP continuam funcionando (não passam por DNS).
+  app.configureHostResolver({ secureDnsMode: 'secure', secureDnsServers: DOH_SERVERS });
+  // A falha anterior fica no cache de DNS por um tempo; sem isto a nova
+  // tentativa receberia o mesmo erro.
+  await session.defaultSession.clearHostResolverCache().catch(() => {});
+  console.log('[dns] domínio não resolvido pelo DNS do sistema; usando Google/Cloudflare (DoH)');
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('net:dnsFallback');
+  return true;
+}
+
+function isDnsFailure(err) {
+  return /ERR_NAME_NOT_RESOLVED|ERR_NAME_RESOLUTION_FAILED/.test(String((err && err.message) || err || ''));
+}
+
+/* ------------------------------------------------------------------ *
  * HTTP helper (processo main -> sem CORS)
  *
  * Usa net.fetch (pilha do Chromium) em vez do fetch do Node: assim os
@@ -296,6 +328,42 @@ async function httpGet(url, { timeout = 30000, json = false } = {}) {
       };
     }
   } catch (err) {
+    if (isDnsFailure(err) && await enableDoh()) {
+      clearTimeout(timer);
+      return httpGet(url, { timeout, json });
+    }
+    return { ok: false, error: describeNetError(err, url) };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Descobre o que existe de fato numa URL de stream (ver o handler net:probe).
+ * `dnsFallback: true` avisa o player de que o DNS foi trocado agora e que
+ * vale tentar tocar de novo.
+ */
+async function probe(url, retried = false) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 15000);
+  try {
+    const res = await net.fetch(url, {
+      signal: ctrl.signal,
+      redirect: 'follow',
+      headers: { 'User-Agent': currentUA, 'Accept': '*/*', 'Range': 'bytes=0-8191' }
+    });
+    const contentType = (res.headers.get('content-type') || '').toLowerCase();
+    const head = await readHead(res, 8192);
+    const sniff = sniffFormat(head);
+    const textual = /text\/|json|mpegurl|mpeg-url|x-scpls/.test(contentType) ||
+                    sniff === 'hls' || sniff === 'html';
+    const snippet = textual ? head.toString('utf8').slice(0, 6000) : '';
+    return { ok: true, status: res.status, contentType, finalUrl: res.url || url, snippet, sniff, dnsFallback: retried };
+  } catch (err) {
+    if (isDnsFailure(err) && await enableDoh()) {
+      clearTimeout(timer);
+      return probe(url, true);
+    }
     return { ok: false, error: describeNetError(err, url) };
   } finally {
     clearTimeout(timer);
@@ -344,28 +412,7 @@ function registerIpc() {
    * de um código HTTP — sem isso o player só conseguiria dizer
    * "formato não suportado".
    */
-  ipcMain.handle('net:probe', async (_e, url) => {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 15000);
-    try {
-      const res = await net.fetch(url, {
-        signal: ctrl.signal,
-        redirect: 'follow',
-        headers: { 'User-Agent': currentUA, 'Accept': '*/*', 'Range': 'bytes=0-8191' }
-      });
-      const contentType = (res.headers.get('content-type') || '').toLowerCase();
-      const head = await readHead(res, 8192);
-      const sniff = sniffFormat(head);
-      const textual = /text\/|json|mpegurl|mpeg-url|x-scpls/.test(contentType) ||
-                      sniff === 'hls' || sniff === 'html';
-      const snippet = textual ? head.toString('utf8').slice(0, 6000) : '';
-      return { ok: true, status: res.status, contentType, finalUrl: res.url || url, snippet, sniff };
-    } catch (err) {
-      return { ok: false, error: describeNetError(err, url) };
-    } finally {
-      clearTimeout(timer);
-    }
-  });
+  ipcMain.handle('net:probe', async (_e, url) => probe(url));
 
   ipcMain.handle('store:read', async () => readStore());
   ipcMain.handle('store:write', async (_e, data) => { await writeStore(data); return { ok: true }; });
@@ -469,6 +516,9 @@ if (!gotLock) {
     await migrateLegacyStore();
     const saved = await readStore();
     if (saved && saved.settings && saved.settings.userAgent) currentUA = saved.settings.userAgent;
+    // A rede já precisou do DNS alternativo antes: liga desde o início, para
+    // que listas em cache e streams abram sem esperar uma falha primeiro.
+    if (saved && saved.settings && saved.settings.dnsFallback) await enableDoh();
     installRequestHooks();
     registerIpc();
     createWindow();

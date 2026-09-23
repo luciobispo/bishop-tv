@@ -30,6 +30,8 @@ contextBridge.exposeInMainWorld('bishop', {
   get: (url, opts) => ipcRenderer.invoke('net:get', url, opts),
   getJson: (url) => ipcRenderer.invoke('net:getJson', url),
   probe: (url) => ipcRenderer.invoke('net:probe', url),
+  // Avisa quando o app passou a usar o DNS do Google/Cloudflare.
+  onDnsFallback: (cb) => ipcRenderer.on('net:dnsFallback', () => cb()),
 
   store: {
     read: () => ipcRenderer.invoke('store:read'),

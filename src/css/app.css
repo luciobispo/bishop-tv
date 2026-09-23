@@ -746,3 +746,11 @@ kbd {
 @media (prefers-reduced-motion: reduce) {
   .sp-glow { animation: spGlowIn .8s .5s ease-out both; }
 }
+
+/* ======================= ANDROID ======================= */
+/* Sem janela para minimizar/fechar: o sistema cuida disso. */
+.is-android .winctl { display: none; }
+/* Toque não tem hover: o coração fica sempre visível. */
+@media (hover: none) {
+  .card-fav { opacity: 1; }
+}
