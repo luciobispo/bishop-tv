@@ -146,9 +146,9 @@ const U = {
     });
   },
 
-  toast(msg, kind) {
+  toast(msg, kind, ms = 4200) {
     const host = $('#toasts');
-    if (!host) return;
+    if (!host) return null;
     const t = U.el('div', 'toast' + (kind ? ' ' + kind : ''), U.esc(msg));
     host.appendChild(t);
     setTimeout(() => {
@@ -156,7 +156,8 @@ const U = {
       t.style.opacity = '0';
       t.style.transform = 'translateX(28px)';
       setTimeout(() => t.remove(), 320);
-    }, 4200);
+    }, ms);
+    return t;
   },
 
   /** Coração do botão de favoritos: contorno ou preenchido. */

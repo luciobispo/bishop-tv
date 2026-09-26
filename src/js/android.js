@@ -171,13 +171,22 @@
   }
 
   /* ---------------- botão Voltar ---------------- */
+  // Na tela inicial, sair pede um segundo toque — como nos apps nativos.
+  const EXIT_WINDOW_MS = 2500;
+  let exitArmedAt = 0;
+  function confirmExit() {
+    if (Date.now() - exitArmedAt < EXIT_WINDOW_MS) return AppPlugin.exitApp();
+    exitArmedAt = Date.now();
+    U.toast('Pressione o botão Voltar novamente para sair.', '', EXIT_WINDOW_MS);
+  }
+
   AppPlugin.addListener('backButton', () => {
     const detail = document.querySelector('#detail');
     if (detail && !detail.classList.contains('hidden')) return UI.closeDetail();
     const search = document.querySelector('#searchInput');
     if (search && document.activeElement === search) return search.blur();
     if (typeof UI !== 'undefined' && UI.view !== 'home' && !Lib.isEmpty) return UI.nav('home');
-    AppPlugin.exitApp();
+    confirmExit();
   });
 
   const noop = () => Promise.resolve({ ok: true });

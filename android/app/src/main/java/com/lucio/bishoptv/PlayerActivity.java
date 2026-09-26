@@ -2,19 +2,21 @@ package com.lucio.bishoptv;
 
 import android.content.Intent;
 import android.graphics.Color;
-import android.graphics.Typeface;
-import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Bundle;
 import android.text.TextUtils;
 import android.util.TypedValue;
 import android.view.Gravity;
+import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
-import android.widget.LinearLayout;
+import android.widget.ImageButton;
 import android.widget.TextView;
+import android.widget.Toast;
+
+import java.util.Locale;
 
 import androidx.activity.OnBackPressedCallback;
 import androidx.annotation.OptIn;
@@ -55,14 +57,18 @@ public class PlayerActivity extends AppCompatActivity {
     static final String EXTRA_LIVE = "live";
     static final String EXTRA_FALLBACK_URL = "fallbackUrl";
     static final String EXTRA_BUFFER = "buffer";
+    static final String EXTRA_CAN_FAVORITE = "canFavorite";
+    static final String EXTRA_FAVORITE = "favorite";
 
     static final String RESULT_POSITION_MS = "positionMs";
     static final String RESULT_DURATION_MS = "durationMs";
     static final String RESULT_ENDED = "ended";
     static final String RESULT_ERROR = "error";
+    static final String RESULT_FAVORITE = "favorite";
 
     private static final String DEFAULT_UA = "VLC/3.0.20 LibVLC/3.0.20";
     private static final int MAX_NETWORK_RETRIES = 2;
+    private static final long SEEK_STEP_MS = 10000;
 
     private ExoPlayer player;
     private PlayerView playerView;
@@ -76,6 +82,12 @@ public class PlayerActivity extends AppCompatActivity {
     private boolean ended = false;
     private String error = null;
     private boolean finishing = false;
+    private boolean canFavorite;
+    private boolean favorite;
+    private ImageButton favButton;
+    private TextView osd;
+    private final Runnable hideOsd = () -> osd.animate().alpha(0f).setDuration(250)
+        .withEndAction(() -> osd.setVisibility(View.GONE));
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -90,6 +102,8 @@ public class PlayerActivity extends AppCompatActivity {
         fallbackUrl = in.getStringExtra(EXTRA_FALLBACK_URL);
         bufferPref = in.getStringExtra(EXTRA_BUFFER);
         if (bufferPref == null) bufferPref = "normal";
+        canFavorite = in.getBooleanExtra(EXTRA_CAN_FAVORITE, false);
+        favorite = in.getBooleanExtra(EXTRA_FAVORITE, false);
         long startMs = in.getLongExtra(EXTRA_START_MS, 0L);
 
         setContentView(buildLayout(in.getStringExtra(EXTRA_TITLE), in.getStringExtra(EXTRA_SUBTITLE)));
@@ -105,6 +119,8 @@ public class PlayerActivity extends AppCompatActivity {
         player = new ExoPlayer.Builder(this)
             .setRenderersFactory(new DefaultRenderersFactory(this).setEnableDecoderFallback(true))
             .setLoadControl(buildLoadControl())
+            .setSeekBackIncrementMs(SEEK_STEP_MS)
+            .setSeekForwardIncrementMs(SEEK_STEP_MS)
             .build();
         player.addListener(new Player.Listener() {
             @Override
@@ -135,44 +151,119 @@ public class PlayerActivity extends AppCompatActivity {
         FrameLayout root = new FrameLayout(this);
         root.setBackgroundColor(Color.BLACK);
 
-        playerView = new PlayerView(this);
-        playerView.setShowBuffering(PlayerView.SHOW_BUFFERING_ALWAYS);
-        playerView.setKeepScreenOn(true);
-        root.addView(playerView, new FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        // O controle é o layout player_controls.xml (ligado em player_view.xml).
+        playerView = (PlayerView) getLayoutInflater().inflate(R.layout.player_view, root, false);
+        root.addView(playerView);
 
-        // Cabeçalho com o título, visível junto com os controles.
-        LinearLayout header = new LinearLayout(this);
-        header.setOrientation(LinearLayout.VERTICAL);
-        int pad = dp(24);
-        header.setPadding(pad, dp(18), pad, dp(40));
-        header.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
-            new int[] { 0xCC000000, 0x00000000 }));
-
-        TextView t = new TextView(this);
-        t.setText(title == null ? "" : title);
-        t.setTextColor(Color.WHITE);
-        t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20);
-        t.setTypeface(Typeface.DEFAULT_BOLD);
-        t.setSingleLine(true);
-        t.setEllipsize(TextUtils.TruncateAt.END);
-        header.addView(t);
-
+        ((TextView) playerView.findViewById(R.id.bishop_title)).setText(title == null ? "" : title);
         if (!TextUtils.isEmpty(subtitle)) {
-            TextView s = new TextView(this);
-            s.setText(subtitle);
-            s.setTextColor(0xFFB8B8C2);
-            s.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
-            s.setSingleLine(true);
-            s.setEllipsize(TextUtils.TruncateAt.END);
-            header.addView(s);
+            TextView sub = playerView.findViewById(R.id.bishop_subtitle);
+            sub.setText(subtitle);
+            sub.setVisibility(View.VISIBLE);
         }
-        root.addView(header, new FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP));
+        playerView.findViewById(R.id.bishop_back).setOnClickListener(v -> finishWithResult());
 
-        playerView.setControllerVisibilityListener(
-            (PlayerView.ControllerVisibilityListener) header::setVisibility);
+        favButton = playerView.findViewById(R.id.bishop_fav);
+        if (canFavorite) {
+            favButton.setVisibility(View.VISIBLE);
+            favButton.setOnClickListener(v -> toggleFavorite());
+            updateFavIcon();
+        }
+
+        if (live) {
+            // Ao vivo não tem linha do tempo nem como avançar ou voltar.
+            playerView.setShowRewindButton(false);
+            playerView.setShowFastForwardButton(false);
+            playerView.findViewById(R.id.bishop_timeline).setVisibility(View.GONE);
+        }
+
+        // Aviso do salto (⏪/⏩ e setas), visível mesmo com o controle escondido.
+        osd = new TextView(this);
+        osd.setTextColor(Color.WHITE);
+        osd.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
+        osd.setBackgroundResource(R.drawable.player_osd_bg);
+        osd.setPadding(dp(22), dp(10), dp(22), dp(10));
+        osd.setVisibility(View.GONE);
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+            Gravity.TOP | Gravity.CENTER_HORIZONTAL);
+        lp.topMargin = dp(96);
+        root.addView(osd, lp);
         return root;
+    }
+
+    /* ------------------------------------------------------------------ */
+
+    private void toggleFavorite() {
+        favorite = !favorite;
+        updateFavIcon();
+        Toast.makeText(this, favorite ? "Adicionado à Minha Lista" : "Removido da Minha Lista",
+            Toast.LENGTH_SHORT).show();
+    }
+
+    private void updateFavIcon() {
+        favButton.setImageResource(favorite ? R.drawable.ic_player_fav_on : R.drawable.ic_player_fav_off);
+    }
+
+    /* ------------------------------------------------------------------ */
+
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        if (player != null && handleSeekKey(event)) return true;
+        return super.dispatchKeyEvent(event);
+    }
+
+    /**
+     * ⏪/⏩ do controle remoto saltam direto, sem abrir o menu. Com o menu
+     * escondido, as setas esquerda/direita fazem o mesmo. Segurar a tecla
+     * acelera: 10 s, depois 30 s, depois 1 min por salto.
+     */
+    private boolean handleSeekKey(KeyEvent e) {
+        int code = e.getKeyCode();
+        boolean media = code == KeyEvent.KEYCODE_MEDIA_FAST_FORWARD || code == KeyEvent.KEYCODE_MEDIA_REWIND;
+        boolean arrow = (code == KeyEvent.KEYCODE_DPAD_LEFT || code == KeyEvent.KEYCODE_DPAD_RIGHT)
+            && !playerView.isControllerFullyVisible();
+        if (!media && !arrow) return false;
+        // Ao vivo: ⏪/⏩ não fazem nada; as setas seguem o padrão (abrem o menu).
+        if (!canSeek()) return media;
+        if (e.getAction() != KeyEvent.ACTION_DOWN) return true;
+
+        int repeat = e.getRepeatCount();
+        // A repetição da tecla chega a ~20 por segundo: usa só uma a cada três.
+        if (repeat > 0 && repeat % 3 != 0) return true;
+        long step = repeat < 15 ? SEEK_STEP_MS : repeat < 45 ? 30000 : 60000;
+        boolean forward = code == KeyEvent.KEYCODE_MEDIA_FAST_FORWARD || code == KeyEvent.KEYCODE_DPAD_RIGHT;
+        seekBy(forward ? step : -step);
+        return true;
+    }
+
+    private boolean canSeek() {
+        return !live && player.isCurrentMediaItemSeekable() && player.getDuration() != C.TIME_UNSET;
+    }
+
+    private void seekBy(long deltaMs) {
+        long duration = player.getDuration();
+        // A posição já reflete o salto anterior, mesmo antes de o vídeo carregar.
+        long target = Math.max(0, Math.min(player.getCurrentPosition() + deltaMs, duration - 1000));
+        player.seekTo(target);
+        showOsd((deltaMs > 0 ? "\u00BB  " : "\u00AB  ") + formatTime(target) + " / " + formatTime(duration));
+    }
+
+    private void showOsd(String text) {
+        osd.removeCallbacks(hideOsd);
+        osd.animate().cancel();
+        osd.setText(text);
+        osd.setAlpha(1f);
+        osd.setVisibility(View.VISIBLE);
+        osd.postDelayed(hideOsd, 1500);
+    }
+
+    private static String formatTime(long ms) {
+        long s = Math.max(0, ms / 1000);
+        long h = s / 3600, m = (s % 3600) / 60, sec = s % 60;
+        return h > 0
+            ? String.format(Locale.ROOT, "%d:%02d:%02d", h, m, sec)
+            : String.format(Locale.ROOT, "%02d:%02d", m, sec);
     }
 
     /**
@@ -340,6 +431,7 @@ public class PlayerActivity extends AppCompatActivity {
             data.putExtra(RESULT_DURATION_MS, duration == C.TIME_UNSET ? 0 : duration);
         }
         data.putExtra(RESULT_ENDED, ended);
+        if (canFavorite) data.putExtra(RESULT_FAVORITE, favorite);
         if (error != null) data.putExtra(RESULT_ERROR, error);
         setResult(RESULT_OK, data);
         finish();

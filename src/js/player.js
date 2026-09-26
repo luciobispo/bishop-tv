@@ -106,10 +106,13 @@ const Player = {
    */
   async playExternal(item, opts) {
     Store.pushRecent(item);
+    // Canais e filmes ganham o coração no player; o ExoPlayer devolve o estado final.
+    const canFav = item.type === 'live' || item.type === 'movie';
     let res = {};
     try {
       res = await window.bishop.nativePlayer.play({
         ...this.nativeUrls(item),
+        ...(canFav ? { favorite: Store.isFav(item.key) } : {}),
         buffer: Store.get('buffer') || 'normal',
         title: item.title || item.name || '',
         subtitle: opts.subtitle || this.subtitleFor(item),
@@ -124,6 +127,10 @@ const Player = {
     if (!this.isLive && res.durationMs > 0) {
       const dur = res.durationMs / 1000;
       Store.setProgress(item, res.ended ? dur : res.positionMs / 1000, dur);
+    }
+    if (canFav && typeof res.favorite === 'boolean' && res.favorite !== Store.isFav(item.key)) {
+      Store.toggleFav(item);
+      if (typeof UI !== 'undefined') UI.refreshFavUI();
     }
     if (res.error) U.toast(res.error, 'warn');
     if (res.ended && typeof UI !== 'undefined' && UI.playNextEpisode && UI.playNextEpisode(item)) return;
