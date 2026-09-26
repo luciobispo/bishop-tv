@@ -563,6 +563,7 @@ const UI = {
 
     host.innerHTML = srcs.map((s) => {
       const active = s.id === Store.data.activeSource;
+      if (s.id === this.editingSource) return this.sourceEditHTML(s, active, icons);
       const desc = s.type === 'xtream' ? `${U.esc(s.host)} · ${U.esc(s.user)}`
         : s.type === 'url' ? U.esc(s.url) : U.esc(s.path || 'arquivo local');
       const sync = s.lastSync ? new Date(s.lastSync).toLocaleString('pt-BR') : 'nunca';
@@ -576,11 +577,42 @@ const UI = {
           </div>
           <div class="src-actions">
             ${active ? '' : `<button class="btn btn-ghost sm" data-use="${s.id}">Usar</button>`}
+            ${s.type === 'url' ? `<button class="btn btn-ghost sm" data-edit="${s.id}">Editar</button>` : ''}
             <button class="btn btn-ghost sm" data-sync="${s.id}">Atualizar</button>
             <button class="btn btn-danger sm" data-del="${s.id}">Remover</button>
           </div>
         </div>`;
     }).join('');
+  },
+
+  /** Lista (id) sendo editada na tela de Fontes, ou null. */
+  editingSource: null,
+
+  sourceEditHTML(s, active, icons) {
+    return `
+      <div class="source-item editing ${active ? 'active' : ''}" data-src="${s.id}">
+        <div class="src-ico">${icons.url}</div>
+        <div class="src-edit">
+          <label class="field">
+            <span>Nome da lista</span>
+            <input type="text" data-edit-name value="${U.esc(s.name)}">
+          </label>
+          <div class="field">
+            <span>URL do .m3u</span>
+            <div class="field-inline">
+              <input type="text" data-edit-url value="${U.esc(s.url)}" spellcheck="false">
+              <button class="btn btn-ghost sm" data-copy-url title="Copiar a URL">
+                <svg viewBox="0 0 24 24"><path d="M16 1H4a2 2 0 00-2 2v14h2V3h12zm3 4H8a2 2 0 00-2 2v14a2 2 0 002 2h11a2 2 0 002-2V7a2 2 0 00-2-2zm0 16H8V7h11z"/></svg>
+                Copiar
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="src-actions">
+          <button class="btn btn-play sm" data-save="${s.id}">Salvar</button>
+          <button class="btn btn-ghost sm" data-cancel-edit>Cancelar</button>
+        </div>
+      </div>`;
   },
 
   /* ================================================================

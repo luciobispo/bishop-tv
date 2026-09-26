@@ -27,10 +27,12 @@
   function db() {
     if (!dbPromise) {
       dbPromise = new Promise((resolve, reject) => {
-        const req = indexedDB.open(DB_NAME, 1);
+        const req = indexedDB.open(DB_NAME, 2);
         req.onupgradeneeded = () => {
-          req.result.createObjectStore('kv');
-          req.result.createObjectStore('cache');
+          const d = req.result;
+          for (const name of ['kv', 'cache', 'files']) {
+            if (!d.objectStoreNames.contains(name)) d.createObjectStore(name);
+          }
         };
         req.onsuccess = () => resolve(req.result);
         req.onerror = () => reject(req.error);
@@ -73,33 +75,78 @@
     return raw || 'Falha desconhecida na conexão.';
   }
 
-  async function httpGet(url, { timeout = 30000, json = false } = {}) {
+  /** Entrega o corpo aos pedaços, sem nunca montar o texto inteiro. */
+  async function pump(resp, onChunk) {
+    const reader = resp.body.getReader();
+    const dec = new TextDecoder();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      onChunk(dec.decode(value, { stream: true }));
+    }
+    const tail = dec.decode();
+    if (tail) onChunk(tail);
+  }
+
+  /**
+   * O nativo grava a resposta num arquivo e o WebView o lê pelo servidor local
+   * do Capacitor — ver NativeHttpPlugin. Com `onChunk`, o texto vai sendo
+   * entregue enquanto é lido, para listas que não cabem na memória de uma vez.
+   */
+  async function httpGet(url, { timeout = 30000, json = false, onChunk } = {}) {
+    let path = '';
     try {
-      const res = await NativeHttp.get({ url, userAgent, timeoutMs: timeout });
+      const res = await NativeHttp.download({ url, userAgent, timeoutMs: timeout });
+      path = res.path || '';
       if (res.status >= 400) {
         const extra = res.status === 401 || res.status === 403
           ? ' — usuário, senha ou assinatura recusados pelo servidor'
           : res.status === 404 ? ' — este endereço não existe nesse servidor' : '';
         return { ok: false, error: `O servidor respondeu ${res.status}${extra}.` };
       }
-      let data = res.data;
-      if (!json) return { ok: true, data: typeof data === 'string' ? data : JSON.stringify(data) };
-      if (typeof data === 'string') {
-        try { data = JSON.parse(data); } catch {
-          return {
-            ok: false,
-            error: 'O servidor respondeu algo que não é JSON. Verifique o endereço, o usuário e a ' +
-                   'senha — muitos painéis devolvem uma página de erro em HTML quando o login falha.'
-          };
-        }
+      const resp = path ? await fetch(Cap.convertFileSrc(path)) : new Response('');
+      if (onChunk) {
+        await pump(resp, onChunk);
+        return { ok: true };
       }
-      return { ok: true, data };
+      const text = await resp.text();
+      if (!json) return { ok: true, data: text };
+      try {
+        return { ok: true, data: JSON.parse(text) };
+      } catch {
+        return {
+          ok: false,
+          error: 'O servidor respondeu algo que não é JSON. Verifique o endereço, o usuário e a ' +
+                 'senha — muitos painéis devolvem uma página de erro em HTML quando o login falha.'
+        };
+      }
     } catch (err) {
       return { ok: false, error: describeError(err, url) };
+    } finally {
+      if (path) NativeHttp.discard({ path }).catch(() => {});
     }
   }
 
   /* ---------------- arquivo .m3u ---------------- */
+  // O conteúdo fica num store próprio do IndexedDB e a fonte guarda só a chave
+  // ("idb:…"). Dentro da configuração, a lista inteira seria copiada a cada
+  // Store.save() — inclusive durante a reprodução, a cada atualização de progresso.
+  const FILE_PREFIX = 'idb:';
+
+  async function readFile(path) {
+    if (!String(path || '').startsWith(FILE_PREFIX)) {
+      return { ok: false, error: 'No Android a lista fica guardada no app; adicione o arquivo de novo.' };
+    }
+    try {
+      const data = await idb('files', 'readonly', (s) => s.get(path.slice(FILE_PREFIX.length)));
+      return typeof data === 'string'
+        ? { ok: true, data }
+        : { ok: false, error: 'A lista guardada no app não foi encontrada; adicione o arquivo de novo.' };
+    } catch (err) {
+      return { ok: false, error: String(err.message || err) };
+    }
+  }
+
   function pickM3U() {
     return new Promise((resolve) => {
       const input = document.createElement('input');
@@ -110,7 +157,10 @@
         const f = input.files && input.files[0];
         if (!f) return resolve({ ok: false, canceled: true });
         try {
-          resolve({ ok: true, data: await f.text(), name: f.name, path: '' });
+          const key = 'f' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+          const text = await f.text();
+          await idb('files', 'readwrite', (s) => s.put(text, key));
+          resolve({ ok: true, name: f.name, path: FILE_PREFIX + key });
         } catch (err) {
           resolve({ ok: false, error: String(err.message || err) });
         }
@@ -137,10 +187,12 @@
     libs: {},
 
     pickM3U,
-    readFile: () => Promise.resolve({ ok: false, error: 'No Android a lista fica guardada no app; adicione o arquivo de novo.' }),
+    readFile,
     pathForFile: () => '',
 
     get: (url, opts) => httpGet(url, opts || {}),
+    // Só no Android: listas M3U grandes são interpretadas enquanto são lidas.
+    stream: (url, { timeout, onChunk } = {}) => httpGet(url, { timeout, onChunk }),
     getJson: (url) => httpGet(url, { json: true }),
     // Só o player web usa; no Android quem toca é o ExoPlayer.
     probe: () => Promise.resolve({ ok: false, error: 'indisponível no Android' }),

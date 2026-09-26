@@ -75,6 +75,7 @@ const Lib = {
     let text = '';
     if (src.type === 'url') {
       report('Baixando lista…');
+      if (window.bishop.stream) return this._streamM3U(src.url, report);
       const res = await window.bishop.get(src.url, { timeout: 120000 });
       if (!res.ok) throw new Error(res.error || 'Não foi possível baixar a lista');
       text = res.data;
@@ -89,13 +90,37 @@ const Lib = {
       }
     }
 
-    if (!/#EXTM3U|#EXTINF|^https?:/im.test(text || '')) {
+    if (!this.looksLikeM3U(text)) {
       throw new Error('O conteúdo não parece ser uma lista M3U válida.');
     }
 
     report('Interpretando a lista…');
     const { items } = M3U.parse(text);
     return items;
+  },
+
+  looksLikeM3U(text) {
+    return /#EXTM3U|#EXTINF|^https?:/im.test(text || '');
+  },
+
+  /** Android: interpreta a lista enquanto ela é lida, sem montar o texto inteiro. */
+  async _streamM3U(url, report) {
+    const parser = M3U.parser();
+    let head = '';
+    let reading = false;
+    const res = await window.bishop.stream(url, {
+      timeout: 120000,
+      onChunk: (chunk) => {
+        if (!reading) { reading = true; report('Interpretando a lista…'); }
+        if (head.length < 4096) head += chunk.slice(0, 4096);
+        parser.push(chunk);
+      }
+    });
+    if (!res.ok) throw new Error(res.error || 'Não foi possível baixar a lista');
+    if (!this.looksLikeM3U(head)) {
+      throw new Error('O conteúdo não parece ser uma lista M3U válida.');
+    }
+    return parser.end().items;
   },
 
   /* ------------------------------------------------------------------

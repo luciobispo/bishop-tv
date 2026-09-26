@@ -44,7 +44,9 @@ const App = {
   async loadSource(src, force) {
     U.loader(true, `Carregando “${src.name}”`, 'Preparando…');
     try {
-      await Lib.load(src, { force, onProgress: (m) => U.loaderSub(m) });
+      // `stale`: a URL foi editada e o cache em disco ainda é do endereço antigo.
+      await Lib.load(src, { force: force || src.stale, onProgress: (m) => U.loaderSub(m) });
+      delete src.stale;
       Store.data.activeSource = src.id;
       Store.save();
       U.loader(false);
@@ -349,6 +351,30 @@ const App = {
       } catch (err) { U.toast(String(err.message || err), 'warn'); }
     });
 
+    // --- editar lista por URL ---
+    U.on($('#sourceList'), 'click', '[data-edit]', (_e, el) => {
+      UI.editingSource = el.dataset.edit;
+      UI.renderSources();
+      const input = $('#sourceList [data-edit-url]');
+      if (input) { input.focus(); input.select(); }
+    });
+    U.on($('#sourceList'), 'click', '[data-cancel-edit]', () => {
+      UI.editingSource = null;
+      UI.renderSources();
+    });
+    U.on($('#sourceList'), 'click', '[data-save]', (_e, el) => this.saveSourceEdit(el.dataset.save));
+    U.on($('#sourceList'), 'click', '[data-copy-url]', async (_e, el) => {
+      // Copia o que está no campo, inclusive uma edição ainda não salva.
+      const url = el.closest('.field-inline').querySelector('[data-edit-url]').value.trim();
+      if (!url) return;
+      const ok = await U.copyText(url);
+      U.toast(ok ? 'URL copiada' : 'Não foi possível copiar a URL', ok ? 'ok' : 'warn');
+    });
+    U.on($('#sourceList'), 'keydown', '.src-edit input', (e) => {
+      if (e.key === 'Enter') this.saveSourceEdit(UI.editingSource);
+      if (e.key === 'Escape') { e.stopPropagation(); UI.editingSource = null; UI.renderSources(); }
+    });
+
     U.on($('#sourceList'), 'click', '[data-del]', (_e, el) => {
       const src = Store.getSource(el.dataset.del);
       if (!src) return;
@@ -366,6 +392,56 @@ const App = {
         }
       }
     });
+  },
+
+  /**
+   * Salva nome e URL de uma lista. Se a URL mudou na lista em uso, recarrega
+   * na hora e, se o novo endereço não funcionar, volta ao anterior — melhor
+   * do que deixar salva uma URL quebrada. Nas outras listas, a recarga fica
+   * para quando forem usadas.
+   */
+  async saveSourceEdit(id) {
+    const src = Store.getSource(id);
+    const row = $(`#sourceList .source-item[data-src="${id}"]`);
+    if (!src || !row) return;
+
+    const url = U.cleanUrl(row.querySelector('[data-edit-url]').value);
+    const name = row.querySelector('[data-edit-name]').value.trim() || src.name;
+    if (!/^https?:\/\//i.test(url)) return U.toast('Informe uma URL começando com http:// ou https://', 'warn');
+
+    const prev = { name: src.name, url: src.url };
+    const urlChanged = url !== src.url;
+    src.name = name;
+    src.url = url;
+    UI.editingSource = null;
+
+    if (!urlChanged) {
+      Store.save();
+      UI.renderSources();
+      return U.toast('Lista atualizada', 'ok');
+    }
+
+    if (Store.data.activeSource !== src.id) {
+      src.stale = true;  // o cache ainda é da URL antiga
+      Store.save();
+      UI.renderSources();
+      return U.toast('URL salva. A lista será baixada do novo endereço quando você usá-la.', 'ok');
+    }
+
+    try {
+      await this.loadSource(src, true);
+      Store.save();
+      UI.nav('sources');
+      U.toast('URL atualizada e lista recarregada', 'ok');
+    } catch (err) {
+      Object.assign(src, prev);
+      Store.save();
+      UI.editingSource = src.id;  // reabre a edição para corrigir
+      UI.renderSources();
+      const input = $('#sourceList [data-edit-url]');
+      if (input) input.value = url;
+      U.toast('A nova URL não funcionou, a anterior foi mantida: ' + (err.message || err), 'warn');
+    }
   },
 
   /**

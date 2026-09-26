@@ -174,6 +174,23 @@ const U = {
     if (path) path.setAttribute('d', U.heartPath(on));
   },
 
+  /** Copia texto: Electron (preload) → Clipboard API → execCommand (WebView antigo). */
+  async copyText(text) {
+    try {
+      if (window.bishop && window.bishop.copyText) return !!window.bishop.copyText(text);
+      if (navigator.clipboard) { await navigator.clipboard.writeText(text); return true; }
+    } catch {}
+    const ta = U.el('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;opacity:0;pointer-events:none';
+    document.body.appendChild(ta);
+    ta.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch {}
+    ta.remove();
+    return ok;
+  },
+
   favToast(added) {
     U.toast(added ? 'Adicionado aos favoritos' : 'Removido dos favoritos', added ? 'ok' : '');
   },

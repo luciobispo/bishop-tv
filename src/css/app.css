@@ -412,6 +412,13 @@ select.mini-input option { background: #1a1a22; }
 .source-item.active .src-tag { background: var(--accent); color: #fff; }
 .src-desc { font-size: 12px; color: var(--txt-faint); margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .src-actions { display: flex; gap: 8px; flex-shrink: 0; }
+.source-item.editing { align-items: flex-start; border-color: rgba(255,255,255,.22); }
+.src-edit { flex: 1; min-width: 0; }
+.src-edit .field:last-child { margin-bottom: 0; }
+.field-inline { display: flex; gap: 8px; align-items: stretch; }
+.field-inline input { flex: 1; min-width: 0; }
+.field-inline .btn { flex-shrink: 0; }
+.field-inline .btn svg { font-size: 15px; }
 
 /* ======================= CONFIGURAÇÕES ======================= */
 .setting {

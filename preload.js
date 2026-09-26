@@ -1,6 +1,6 @@
 'use strict';
 
-const { contextBridge, ipcRenderer, webUtils } = require('electron');
+const { contextBridge, ipcRenderer, webUtils, clipboard } = require('electron');
 const path = require('path');
 const { pathToFileURL } = require('url');
 
@@ -43,6 +43,9 @@ contextBridge.exposeInMainWorld('bishop', {
     write: (key, payload) => ipcRenderer.invoke('cache:write', key, payload),
     clear: () => ipcRenderer.invoke('cache:clear')
   },
+
+  // A área de transferência do Electron não depende de foco nem de permissão.
+  copyText: (text) => { clipboard.writeText(String(text || '')); return true; },
 
   setUserAgent: (ua) => ipcRenderer.invoke('config:setUserAgent', ua),
   keepAwake: (on) => ipcRenderer.invoke('power:keepAwake', on),

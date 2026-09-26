@@ -189,6 +189,7 @@ const NET_ERRORS = {
   ERR_CERT_AUTHORITY_INVALID: 'o certificado de "{host}" não é confiável',
   ERR_CERT_DATE_INVALID: 'o certificado de "{host}" está vencido',
   ERR_BLOCKED_BY_CLIENT: 'a conexão foi bloqueada (antivírus, firewall ou extensão)',
+  ERR_UNSAFE_PORT: 'a porta usada por "{host}" é bloqueada pelo Chromium por segurança (ex.: 6000, 6665–6669) — peça outra porta ao provedor',
   ERR_NETWORK_CHANGED: 'a rede mudou durante a conexão'
 };
 
@@ -254,6 +255,7 @@ function describeNetError(err, url) {
   if (code && NET_ERRORS[code]) {
     let msg = 'Não foi possível conectar: ' + NET_ERRORS[code].replace('{host}', hostOf(url)) + '.';
     if (code === 'ERR_NAME_NOT_RESOLVED' || code === 'ERR_NAME_RESOLUTION_FAILED') {
+      if (dohEnabled) msg += ' Nem o DNS do Google/Cloudflare encontrou esse domínio.';
       msg += ' Provedores de IPTV trocam de domínio com frequência — confira a URL com quem ' +
              'fornece a lista e veja se ela não mudou de endereço.';
     }

@@ -21,76 +21,97 @@ const M3U = {
    * Retorna { items:[], playlistAttrs:{} }
    */
   parse(text) {
-    const lines = String(text || '').split(/\r?\n/);
-    const items = [];
-    const playlistAttrs = {};
+    const p = this.parser();
+    p.push(String(text || ''));
+    return p.end();
+  },
 
-    let pending = null;    // item em construção (aguardando a URL)
-    let extgrp = '';       // #EXTGRP aplicado aos próximos itens
-
-    for (let i = 0; i < lines.length; i++) {
-      const raw = lines[i];
-      const line = raw.trim();
-      if (!line) continue;
-
-      if (line.startsWith('#EXTM3U')) {
-        let m;
-        this.ATTR_RE.lastIndex = 0;
-        while ((m = this.ATTR_RE.exec(line))) playlistAttrs[m[1].toLowerCase()] = m[2];
-        continue;
+  /**
+   * Parser incremental: recebe o texto em pedaços com `push` e devolve o
+   * resultado em `end`. Não guarda a lista inteira nem um array de linhas —
+   * no Firestick uma lista grande não cabe na memória duas vezes.
+   */
+  parser() {
+    const st = {
+      items: [],
+      playlistAttrs: {},
+      pending: null,   // item em construção (aguardando a URL)
+      extgrp: ''       // #EXTGRP aplicado aos próximos itens
+    };
+    let rest = '';
+    return {
+      push: (chunk) => {
+        const lines = (rest + chunk).split('\n');
+        rest = lines.pop();
+        for (let i = 0; i < lines.length; i++) this._line(st, lines[i]);
+      },
+      end: () => {
+        if (rest) this._line(st, rest);
+        rest = '';
+        return { items: st.items, playlistAttrs: st.playlistAttrs };
       }
+    };
+  },
 
-      if (line.startsWith('#EXTINF')) {
-        pending = this._parseExtinf(line);
-        if (extgrp && !pending.group) pending.group = extgrp;
-        continue;
-      }
+  _line(st, raw) {
+    const line = raw.trim();
+    if (!line) return;
 
-      if (line.startsWith('#EXTGRP')) {
-        extgrp = line.slice(line.indexOf(':') + 1).trim();
-        if (pending && !pending.group) pending.group = extgrp;
-        continue;
-      }
-
-      // Opções de player (user-agent / referer por canal)
-      if (line.startsWith('#EXTVLCOPT')) {
-        if (!pending) continue;
-        const v = line.slice(line.indexOf(':') + 1).trim();
-        const eq = v.indexOf('=');
-        if (eq > 0) {
-          const k = v.slice(0, eq).trim().toLowerCase();
-          const val = v.slice(eq + 1).trim();
-          if (k === 'http-user-agent') pending.userAgent = val;
-          if (k === 'http-referrer' || k === 'http-referer') pending.referer = val;
-        }
-        continue;
-      }
-
-      if (line.startsWith('#KODIPROP')) {
-        if (!pending) continue;
-        const v = line.slice(line.indexOf(':') + 1).trim();
-        const eq = v.indexOf('=');
-        if (eq > 0) {
-          pending.kodiProps = pending.kodiProps || {};
-          pending.kodiProps[v.slice(0, eq).trim()] = v.slice(eq + 1).trim();
-        }
-        continue;
-      }
-
-      if (line.startsWith('#')) continue; // outros comentários
-
-      // Linha de URL
-      if (pending) {
-        pending.url = line;
-        items.push(this._finalize(pending));
-        pending = null;
-      } else if (/^(https?|rtmp|rtsp|udp|rtp):/i.test(line)) {
-        // URL solta, sem EXTINF
-        items.push(this._finalize({ name: this._nameFromUrl(line), url: line, group: extgrp }));
-      }
+    if (line.startsWith('#EXTM3U')) {
+      let m;
+      this.ATTR_RE.lastIndex = 0;
+      while ((m = this.ATTR_RE.exec(line))) st.playlistAttrs[m[1].toLowerCase()] = m[2];
+      return;
     }
 
-    return { items, playlistAttrs };
+    if (line.startsWith('#EXTINF')) {
+      st.pending = this._parseExtinf(line);
+      if (st.extgrp && !st.pending.group) st.pending.group = st.extgrp;
+      return;
+    }
+
+    if (line.startsWith('#EXTGRP')) {
+      st.extgrp = line.slice(line.indexOf(':') + 1).trim();
+      if (st.pending && !st.pending.group) st.pending.group = st.extgrp;
+      return;
+    }
+
+    // Opções de player (user-agent / referer por canal)
+    if (line.startsWith('#EXTVLCOPT')) {
+      if (!st.pending) return;
+      const v = line.slice(line.indexOf(':') + 1).trim();
+      const eq = v.indexOf('=');
+      if (eq > 0) {
+        const k = v.slice(0, eq).trim().toLowerCase();
+        const val = v.slice(eq + 1).trim();
+        if (k === 'http-user-agent') st.pending.userAgent = val;
+        if (k === 'http-referrer' || k === 'http-referer') st.pending.referer = val;
+      }
+      return;
+    }
+
+    if (line.startsWith('#KODIPROP')) {
+      if (!st.pending) return;
+      const v = line.slice(line.indexOf(':') + 1).trim();
+      const eq = v.indexOf('=');
+      if (eq > 0) {
+        st.pending.kodiProps = st.pending.kodiProps || {};
+        st.pending.kodiProps[v.slice(0, eq).trim()] = v.slice(eq + 1).trim();
+      }
+      return;
+    }
+
+    if (line.startsWith('#')) return; // outros comentários
+
+    // Linha de URL
+    if (st.pending) {
+      st.pending.url = line;
+      st.items.push(this._finalize(st.pending));
+      st.pending = null;
+    } else if (/^(https?|rtmp|rtsp|udp|rtp):/i.test(line)) {
+      // URL solta, sem EXTINF
+      st.items.push(this._finalize({ name: this._nameFromUrl(line), url: line, group: st.extgrp }));
+    }
   },
 
   /** Primeira vírgula fora de aspas — atributos podem conter vírgulas. */
