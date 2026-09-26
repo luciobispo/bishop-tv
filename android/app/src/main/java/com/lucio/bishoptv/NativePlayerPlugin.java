@@ -38,6 +38,8 @@ public class NativePlayerPlugin extends Plugin {
         intent.putExtra(PlayerActivity.EXTRA_USER_AGENT, call.getString("userAgent", ""));
         intent.putExtra(PlayerActivity.EXTRA_START_MS, start instanceof Number ? ((Number) start).longValue() : 0L);
         intent.putExtra(PlayerActivity.EXTRA_LIVE, call.getBoolean("live", false));
+        intent.putExtra(PlayerActivity.EXTRA_FALLBACK_URL, call.getString("fallbackUrl"));
+        intent.putExtra(PlayerActivity.EXTRA_BUFFER, call.getString("buffer", "normal"));
         startActivityForResult(call, intent, "onPlayerClosed");
     }
 

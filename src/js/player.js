@@ -109,7 +109,8 @@ const Player = {
     let res = {};
     try {
       res = await window.bishop.nativePlayer.play({
-        url: item.url,
+        ...this.nativeUrls(item),
+        buffer: Store.get('buffer') || 'normal',
         title: item.title || item.name || '',
         subtitle: opts.subtitle || this.subtitleFor(item),
         userAgent: Store.get('userAgent') || '',
@@ -127,6 +128,22 @@ const Player = {
     if (res.error) U.toast(res.error, 'warn');
     if (res.ended && typeof UI !== 'undefined' && UI.playNextEpisode && UI.playNextEpisode(item)) return;
     if (typeof UI !== 'undefined') UI.refreshContinue();
+  },
+
+  /**
+   * Ao vivo em painéis Xtream, o ExoPlayer vai bem melhor com o .ts: o .m3u8
+   * desses painéis é gerado na hora, com poucos segmentos, e o player fica
+   * encostado na borda ao vivo, parando a cada segmento. É o formato padrão
+   * de apps como TiviMate e IPTV Smarters. O .m3u8 fica de reserva se o .ts falhar.
+   */
+  nativeUrls(item) {
+    const u = item.url || '';
+    if (item.type !== 'live') return { url: u };
+    let ts = '';
+    if (item.xtream && item.altUrl) ts = item.altUrl;
+    else if (/\/live\/.+\.m3u8(\?|$)/i.test(u)) ts = u.replace(/\.m3u8(\?|$)/i, '.ts$1');
+    else if (/\/m3u8(\?|$)/i.test(u)) ts = u.replace(/\/m3u8(\?|$)/i, '/ts$1');
+    return ts && ts !== u ? { url: ts, fallbackUrl: u } : { url: u };
   },
 
   subtitleFor(item) {

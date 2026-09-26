@@ -1,6 +1,7 @@
 package com.lucio.bishoptv;
 
 import android.os.Bundle;
+import android.webkit.WebSettings;
 
 import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
@@ -16,6 +17,12 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(NativePlayerPlugin.class);
         registerPlugin(NativeHttpPlugin.class);
         super.onCreate(savedInstanceState);
+
+        // Sem isto o WebView ignora o <meta viewport width=1200>: a TV (1080p a
+        // 2x) fica com 960px de largura e cai no layout de celular do CSS.
+        WebSettings ws = getBridge().getWebView().getSettings();
+        ws.setUseWideViewPort(true);
+        ws.setLoadWithOverviewMode(true);
     }
 
     @Override

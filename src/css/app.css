@@ -761,3 +761,19 @@ kbd {
 @media (hover: none) {
   .card-fav { opacity: 1; }
 }
+
+/* Controle remoto (tvnav.js): o foco precisa ser visível de longe. */
+.is-android :focus { outline: none; }
+.is-android .card:focus {
+  transform: scale(1.08); z-index: 4;
+  box-shadow: 0 0 0 3px #fff, var(--shadow-card);
+}
+.is-android .grid .card:focus { transform: scale(1.05); }
+.is-android .card:focus .card-hover { opacity: 1; transform: translateY(0); }
+.is-android button:focus,
+.is-android select:focus,
+.is-android input:focus,
+.is-android textarea:focus { box-shadow: 0 0 0 3px #fff; }
+.is-android .navitem:focus,
+.is-android .cat-item:focus { background: rgba(255,255,255,.18); color: #fff; }
+.is-android .cat-item.active:focus { background: var(--accent); }

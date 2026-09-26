@@ -30,8 +30,10 @@ import androidx.media3.common.Player;
 import androidx.media3.common.util.UnstableApi;
 import androidx.media3.datasource.HttpDataSource;
 import androidx.media3.datasource.okhttp.OkHttpDataSource;
+import androidx.media3.exoplayer.DefaultLoadControl;
 import androidx.media3.exoplayer.DefaultRenderersFactory;
 import androidx.media3.exoplayer.ExoPlayer;
+import androidx.media3.exoplayer.LoadControl;
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
 import androidx.media3.exoplayer.source.MediaSource;
 import androidx.media3.extractor.DefaultExtractorsFactory;
@@ -51,6 +53,8 @@ public class PlayerActivity extends AppCompatActivity {
     static final String EXTRA_USER_AGENT = "userAgent";
     static final String EXTRA_START_MS = "startMs";
     static final String EXTRA_LIVE = "live";
+    static final String EXTRA_FALLBACK_URL = "fallbackUrl";
+    static final String EXTRA_BUFFER = "buffer";
 
     static final String RESULT_POSITION_MS = "positionMs";
     static final String RESULT_DURATION_MS = "durationMs";
@@ -63,6 +67,8 @@ public class PlayerActivity extends AppCompatActivity {
     private ExoPlayer player;
     private PlayerView playerView;
     private String url;
+    private String fallbackUrl;
+    private String bufferPref;
     private String userAgent;
     private boolean live;
     private boolean forcedHls = false;
@@ -81,6 +87,9 @@ public class PlayerActivity extends AppCompatActivity {
         userAgent = in.getStringExtra(EXTRA_USER_AGENT);
         if (TextUtils.isEmpty(userAgent)) userAgent = DEFAULT_UA;
         live = in.getBooleanExtra(EXTRA_LIVE, false);
+        fallbackUrl = in.getStringExtra(EXTRA_FALLBACK_URL);
+        bufferPref = in.getStringExtra(EXTRA_BUFFER);
+        if (bufferPref == null) bufferPref = "normal";
         long startMs = in.getLongExtra(EXTRA_START_MS, 0L);
 
         setContentView(buildLayout(in.getStringExtra(EXTRA_TITLE), in.getStringExtra(EXTRA_SUBTITLE)));
@@ -95,6 +104,7 @@ public class PlayerActivity extends AppCompatActivity {
 
         player = new ExoPlayer.Builder(this)
             .setRenderersFactory(new DefaultRenderersFactory(this).setEnableDecoderFallback(true))
+            .setLoadControl(buildLoadControl())
             .build();
         player.addListener(new Player.Listener() {
             @Override
@@ -166,6 +176,43 @@ public class PlayerActivity extends AppCompatActivity {
     }
 
     /**
+     * O padrão do ExoPlayer volta a tocar com só 2,5 s no buffer (5 s depois de
+     * um travamento). Em IPTV ao vivo o servidor entrega o vídeo quase na mesma
+     * velocidade em que ele toca, então esse colchão nunca cresce e qualquer
+     * oscilação da rede vira "carregando" a cada poucos segundos. Aqui o
+     * colchão é maior — sobretudo depois de um travamento — e o total em bytes
+     * tem teto, porque o buffer mora no heap Java e o Firestick tem pouco.
+     */
+    private LoadControl buildLoadControl() {
+        int startMs, rebufferMs, maxMs, maxMb;
+        switch (bufferPref) {
+            case "low":
+                startMs = live ? 2000 : 1500;
+                rebufferMs = live ? 4000 : 3000;
+                maxMs = 30000;
+                maxMb = 32;
+                break;
+            case "high":
+                startMs = live ? 6000 : 4000;
+                rebufferMs = live ? 15000 : 10000;
+                maxMs = 90000;
+                maxMb = 96;
+                break;
+            default:
+                startMs = live ? 4000 : 2500;
+                rebufferMs = live ? 10000 : 6000;
+                maxMs = 50000;
+                maxMb = 64;
+        }
+        return new DefaultLoadControl.Builder()
+            // min == max: continua baixando sem parar enquanto houver espaço.
+            .setBufferDurationsMs(maxMs, maxMs, startMs, rebufferMs)
+            .setTargetBufferBytes(maxMb * 1024 * 1024)
+            .setPrioritizeTimeOverSizeThresholds(false)
+            .build();
+    }
+
+    /**
      * A extensão resolve quase tudo; sem ela, o ExoPlayer identifica TS, MP4
      * e MKV pelos bytes. HLS sem ".m3u8" no endereço precisa ser forçado —
      * é o que {@link #handleError} faz quando o formato não é reconhecido.
@@ -180,6 +227,15 @@ public class PlayerActivity extends AppCompatActivity {
 
         MediaItem.Builder item = new MediaItem.Builder().setUri(Uri.parse(url));
         if (asHls || looksHls(url)) item.setMimeType(MimeTypes.APPLICATION_M3U8);
+        if (live) {
+            // Sem acelerar para alcançar a borda ao vivo: encostado nela, o
+            // player para a cada segmento esperando o próximo ser publicado.
+            MediaItem.LiveConfiguration.Builder lc = new MediaItem.LiveConfiguration.Builder()
+                .setMinPlaybackSpeed(1f)
+                .setMaxPlaybackSpeed(1f);
+            if ("high".equals(bufferPref)) lc.setTargetOffsetMs(30000);
+            item.setLiveConfiguration(lc.build());
+        }
 
         return new DefaultMediaSourceFactory(http, extractors).createMediaSource(item.build());
     }
@@ -215,6 +271,17 @@ public class PlayerActivity extends AppCompatActivity {
                 && networkRetries < MAX_NETWORK_RETRIES) {
             networkRetries++;
             if (live) player.seekToDefaultPosition();
+            player.prepare();
+            return;
+        }
+
+        // Formato alternativo (ver Player.nativeUrls no JS): o .ts falhou, tenta o .m3u8.
+        if (fallbackUrl != null && !fallbackUrl.equals(url)) {
+            url = fallbackUrl;
+            fallbackUrl = null;
+            forcedHls = false;
+            networkRetries = 0;
+            player.setMediaSource(buildSource(false));
             player.prepare();
             return;
         }
