@@ -161,7 +161,7 @@ const Lib = {
               name: it.seriesName,
               title: it.seriesName,
               seriesName: it.seriesName,
-              logo: it.logo || '',
+              logo: '',
               group: it.group,
               year: it.year || '',
               _n: U.norm(it.seriesName),
@@ -169,11 +169,24 @@ const Lib = {
             };
             seriesAgg.set(it.seriesKey, agg);
           }
-          if (!agg.logo && it.logo) agg.logo = it.logo;
           agg.episodes.push(it);
         }
       }
     });
+
+    // Painéis costumam gravar num bloco de episódios recém-adicionados a
+    // imagem de uma única série; como a lista vem com os mais novos primeiro,
+    // essa imagem virava a capa de dezenas de séries. Conta em quantas séries
+    // cada imagem aparece para descartar as que não pertencem a nenhuma.
+    const SHARED_MAX = 3; // versões dublada/legendada/remasterizada da mesma série
+    const logoUse = new Map();
+    for (const s of seriesAgg.values()) {
+      if (!s.episodes) continue;
+      for (const logo of new Set(s.episodes.map((ep) => ep.logo))) {
+        if (logo) logoUse.set(logo, (logoUse.get(logo) || 0) + 1);
+      }
+    }
+    const usable = (logo) => !!logo && logoUse.get(logo) <= SHARED_MAX;
 
     // Ordena episódios e monta as temporadas
     this.series = Array.from(seriesAgg.values());
@@ -181,6 +194,11 @@ const Lib = {
       this.seriesByKey.set(s.seriesKey, s);
       if (!s.episodes) continue;
       s.episodes.sort((a, b) => (a.season - b.season) || (a.episode - b.episode));
+      // Capa: a primeira imagem exclusiva da série, a partir do T1E1 (os
+      // episódios mais antigos são os que costumam ter a imagem certa).
+      const cover = s.episodes.find((ep) => ep.logo && logoUse.get(ep.logo) === 1)
+        || s.episodes.find((ep) => usable(ep.logo));
+      s.logo = cover ? cover.logo : '';
       s.seasons = {};
       for (const ep of s.episodes) {
         const sn = String(ep.season || 1);
@@ -192,7 +210,7 @@ const Lib = {
           name: ep.epTitle || `Episódio ${ep.episode || ''}`.trim(),
           title: ep.epTitle || `Episódio ${ep.episode || ''}`.trim(),
           url: ep.url,
-          thumb: ep.logo || '',
+          thumb: usable(ep.logo) ? ep.logo : '',
           plot: '',
           duration: '',
           type: 'episode'
