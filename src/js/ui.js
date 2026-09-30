@@ -25,9 +25,8 @@ const UI = {
     const target = $('#view-' + view);
     if (target) target.classList.remove('hidden');
 
-    $$('.navitem').forEach((b) => b.classList.toggle('active', b.dataset.nav === view));
+    $$('.rail-item').forEach((b) => b.classList.toggle('active', b.dataset.nav === view));
     $('#app').scrollTop = 0;
-    $('#topbar').classList.toggle('solid', view !== 'home');
 
     switch (view) {
       case 'home':     this.renderHome(); break;
@@ -35,6 +34,7 @@ const UI = {
       case 'movies':   this.renderCatalog('movie', opts.cat); break;
       case 'series':   this.renderCatalog('series', opts.cat); break;
       case 'mylist':   this.renderMyList(); break;
+      case 'search':   this.renderSearch(); break;
       case 'sources':  this.renderSources(); break;
       case 'settings': this.renderSettings(); break;
     }
@@ -53,7 +53,7 @@ const UI = {
     const isFav = Store.isFav(favKey);
 
     let sub = '';
-    if (item.type === 'live') sub = U.esc(item.group || '');
+    if (item.type === 'live') sub = U.esc(this.liveSub(item));
     else if (item.type === 'series') sub = item.epCount ? `${item.epCount} episódios` : (item.year || '');
     else sub = [item.year, item.rating ? '★ ' + Number(item.rating).toFixed(1) : ''].filter(Boolean).join(' · ');
     if (item._sub) sub = U.esc(item._sub);
@@ -82,11 +82,48 @@ const UI = {
           <svg viewBox="0 0 24 24"><path d="${U.heartPath(isFav)}"/></svg>
         </button>
         ${progress}
+        ${item.type === 'live' ? this.epgHTML(item) : ''}
         <div class="card-hover">
           <div class="card-name">${title}</div>
           ${sub ? `<div class="card-sub">${sub}</div>` : ''}
         </div>
       </div>`;
+  },
+
+  /* ================================================================
+   * EPG nos cards de canal
+   * ================================================================ */
+  liveSub(item) {
+    const nn = EPG.nowNext(item);
+    return nn && nn.now ? 'Agora: ' + nn.now.title : (item.group || '');
+  },
+
+  /** Faixa com o programa no ar e quanto dele já passou. */
+  epgHTML(item) {
+    const nn = EPG.nowNext(item);
+    if (!nn || !nn.now) return '';
+    return `<div class="card-epg"><span>${U.esc(nn.now.title)}</span>` +
+      `<i style="width:${(EPG.progress(nn.now) * 100).toFixed(1)}%"></i></div>`;
+  },
+
+  /** O guia chega depois da lista e os programas mudam: atualiza os cards já na tela. */
+  refreshEpg() {
+    for (const card of $$('.card[data-type="live"]')) {
+      const item = Lib.get(card.dataset.key);
+      if (!item) continue;
+      const old = card.querySelector('.card-epg');
+      if (old) old.remove();
+      const html = this.epgHTML(item);
+      if (html) card.querySelector('.card-hover').insertAdjacentHTML('beforebegin', html);
+      const sub = card.querySelector('.card-sub');
+      if (sub) sub.textContent = this.liveSub(item);
+    }
+  },
+
+  renderEpgStatus() {
+    const st = EPG.status;
+    $('#epgStatus').textContent = st.msg || 'A programação ainda não foi carregada.';
+    $('#epgRefreshBtn').disabled = st.state === 'loading';
   },
 
   /* ================================================================
@@ -101,15 +138,16 @@ const UI = {
       this.heroRef = hero;
       const bg = hero.backdrop || hero.logo || '';
       $('#heroBg').style.backgroundImage = bg ? `url("${bg}")` : 'linear-gradient(120deg,#2a1116,#12121a)';
-      $('#heroKicker').textContent = hero.type === 'series' ? 'Série em destaque'
-        : hero.type === 'movie' ? 'Filme em destaque' : 'Destaque';
       $('#heroTitle').textContent = hero.title || hero.name;
+      const rating = Lib.rating(hero);
+      const kind = { series: 'Série', movie: 'Filme', live: 'Ao vivo' }[hero.type] || '';
       $('#heroMeta').innerHTML = [
-        hero.year ? U.esc(hero.year) : '',
-        hero.rating ? `<span style="color:#f5c518">★ ${Number(hero.rating).toFixed(1)}</span>` : '',
-        hero.genre ? U.esc(hero.genre) : U.esc(hero.group || ''),
-        hero.epCount ? `${hero.epCount} episódios` : ''
-      ].filter(Boolean).join('<span style="opacity:.4">•</span>');
+        rating ? `<span class="hero-rating"><svg viewBox="0 0 24 24"><path d="M12 17.27 18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>${
+          rating.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}</span>` : '',
+        hero.year ? `<span>${U.esc(hero.year)}</span>` : '',
+        kind ? `<span>${kind}</span>` : '',
+        hero.epCount ? `<span>${hero.epCount} episódios</span>` : ''
+      ].filter(Boolean).join('');
       $('#heroDesc').textContent = hero.plot || '';
     }
 
@@ -125,8 +163,13 @@ const UI = {
     }
     const frag = document.createDocumentFragment();
     for (const row of rows) {
-      const el = U.el('div', 'row');
+      const el = U.el('div', row.shape === 'rank' ? 'row row-rank' : 'row');
       el.dataset.row = row.id;
+      // Top 10: número grande ao lado de cada capa.
+      const cards = row.shape === 'rank'
+        ? row.items.map((it, i) =>
+            `<div class="rank-item"><span class="rank-num">${i + 1}</span>${this.cardHTML(it, 'poster')}</div>`).join('')
+        : row.items.map((it) => this.cardHTML(it, row.shape)).join('');
       el.innerHTML = `
         <div class="row-head">
           <h2 class="row-title">${U.esc(row.title)}</h2>
@@ -134,7 +177,7 @@ const UI = {
         </div>
         <div class="row-view">
           <button class="row-arrow left" data-dir="-1">‹</button>
-          <div class="row-track">${row.items.map((it) => this.cardHTML(it, row.shape)).join('')}</div>
+          <div class="row-track">${cards}</div>
           <button class="row-arrow right" data-dir="1">›</button>
         </div>`;
       frag.appendChild(el);
@@ -295,14 +338,28 @@ const UI = {
    * ================================================================ */
   doSearch(q) {
     this.state.searchQuery = q;
-    if (!q || q.trim().length < 2) {
-      if (this.view === 'search') this.nav('home');
-      return;
+    this.renderSearch();
+  },
+
+  renderSearch() {
+    const q = this.state.searchQuery || '';
+    const input = $('#searchInput');
+    if (input.value !== q) input.value = q;
+    const empty = $('#searchEmpty');
+    const show = (msg) => {
+      $('#searchGrid').innerHTML = '';
+      empty.textContent = msg;
+      empty.classList.remove('hidden');
+    };
+
+    if (q.trim().length < 2) {
+      $('#searchTitle').textContent = 'Buscar';
+      return show('Digite pelo menos duas letras para buscar.');
     }
-    if (this.view !== 'search') this.nav('search');
     $('#searchTitle').textContent = `Resultados para “${q}”`;
     const results = Lib.search(q, this.state.searchType, 400);
-    $('#searchEmpty').classList.toggle('hidden', results.length > 0);
+    if (!results.length) return show('Nenhum resultado encontrado.');
+    empty.classList.add('hidden');
     this.renderGrid($('#searchGrid'), results, 'poster');
   },
 
@@ -623,6 +680,11 @@ const UI = {
     $('#setBuffer').value = Store.get('buffer') || 'normal';
     $('#setResume').checked = !!Store.get('resume');
     $('#setAwake').checked = !!Store.get('keepAwake');
+    const src = Store.activeSourceObj();
+    $('#setEpgUrl').value = (src && src.epgUrl) || '';
+    $('#setEpgUrl').placeholder = src && !src.epgUrl && EPG.urlFor(src)
+      ? 'Automático (guia do provedor)' : 'http://servidor/xmltv.php?…';
+    this.renderEpgStatus();
     const info = await window.bishop.appInfo();
     $('#aboutInfo').innerHTML =
       `BishopTV v${U.esc(info.version)} · ${U.esc(info.platform || 'Electron ' + info.electron)} · Chromium ${U.esc(info.chrome)}<br>` +

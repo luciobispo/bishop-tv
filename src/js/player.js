@@ -154,7 +154,7 @@ const Player = {
   },
 
   subtitleFor(item) {
-    if (item.type === 'live') return item.group || '';
+    if (item.type === 'live') return EPG.line(item) || item.group || '';
     if (item.season != null && item.episode != null) {
       return `T${item.season} E${item.episode}` + (item.seriesName ? ' · ' + item.seriesName : '');
     }
@@ -547,11 +547,13 @@ const Player = {
       if (q && !(it._n || U.norm(it.title || it.name)).includes(q)) continue;
       const b = U.el('button', 'zap-item' + (this.item && it.key === this.item.key ? ' active' : ''));
       b.dataset.idx = i;
+      const nn = EPG.nowNext(it);
+      const info = nn && nn.now ? `${EPG.hhmm(nn.now.start)} ${nn.now.title}` : (it.group || '');
       b.innerHTML =
         (it.logo ? `<img src="${U.esc(it.logo)}" loading="lazy" onerror="this.style.visibility='hidden'">`
                  : `<span style="width:44px"></span>`) +
         `<span style="min-width:0"><span class="zi-name">${U.esc(it.title || it.name)}</span>` +
-        `<div class="zi-grp">${U.esc(it.group || '')}</div></span>`;
+        `<div class="zi-grp">${U.esc(info)}</div></span>`;
       frag.appendChild(b);
       shown++;
     }
@@ -566,7 +568,11 @@ const Player = {
    * ------------------------------------------------------------------ */
   startProgressTimer() {
     this.stopProgressTimer();
-    this.progressTimer = setInterval(() => this.saveProgress(), 8000);
+    this.progressTimer = setInterval(() => {
+      this.saveProgress();
+      // Ao vivo: a linha "Agora / A seguir" acompanha a troca de programa.
+      if (this.isLive && this.item) $('#plSub').textContent = this.subtitleFor(this.item);
+    }, 8000);
   },
 
   stopProgressTimer() {

@@ -15,6 +15,7 @@ const App = {
     }
 
     Player.init();
+    this.bindEpg();
     this.bindChrome();
     this.bindNav();
     this.bindCards();
@@ -49,6 +50,8 @@ const App = {
       delete src.stale;
       Store.data.activeSource = src.id;
       Store.save();
+      // Com cache, o guia já entra na primeira tela; senão chega depois.
+      await EPG.init(src).catch((e) => console.warn('[epg]', e));
       U.loader(false);
       this.hideOnboarding();
       UI.state.live.cat = '__all__';
@@ -79,6 +82,43 @@ const App = {
     }, Math.max(0, MIN_MS - performance.now()));
   },
 
+  /* ================================================================
+   * Guia de programação
+   * ================================================================ */
+  bindEpg() {
+    EPG.onUpdate(() => {
+      UI.refreshEpg();
+      if (UI.view === 'settings') UI.renderEpgStatus();
+    });
+    // Programas trocam de hora em hora: avança as faixas e renova o guia velho.
+    setInterval(() => {
+      UI.refreshEpg();
+      const src = Store.activeSourceObj();
+      // Só renova um guia que já funcionou; se o download falhou, fica no botão de Configurações.
+      if (src && EPG.sourceId === src.id && EPG.status.state === 'ok' && EPG.stale()) EPG.refresh(src);
+    }, 60000);
+
+    $('#epgRefreshBtn').onclick = async () => {
+      const src = Store.activeSourceObj();
+      if (!src) return U.toast('Adicione uma lista primeiro.', 'warn');
+      const res = await EPG.refresh(src);
+      U.toast(res.ok ? 'Programação atualizada' : 'EPG: ' + res.error, res.ok ? 'ok' : 'warn');
+    };
+
+    $('#setEpgUrl').addEventListener('change', async (e) => {
+      const src = Store.activeSourceObj();
+      if (!src) return;
+      const url = U.cleanUrl(e.target.value);
+      if (url && !/^https?:\/\//i.test(url)) return U.toast('Informe uma URL começando com http:// ou https://', 'warn');
+      if (url) src.epgUrl = url; else delete src.epgUrl;
+      Store.save();
+      EPG.reset(src.id);
+      UI.renderSettings();
+      const res = await EPG.refresh(src);
+      U.toast(res.ok ? 'Programação carregada' : 'EPG: ' + res.error, res.ok ? 'ok' : 'warn');
+    });
+  },
+
   showOnboarding() { $('#onboarding').classList.remove('hidden'); },
   hideOnboarding() { $('#onboarding').classList.add('hidden'); },
 
@@ -90,11 +130,6 @@ const App = {
     $('#wcMax').onclick = () => window.bishop.window.maximize();
     $('#wcClose').onclick = () => window.bishop.window.close();
 
-    $('#app').addEventListener('scroll', U.throttle(() => {
-      const solid = $('#app').scrollTop > 40 || UI.view !== 'home';
-      $('#topbar').classList.toggle('solid', solid);
-    }, 100));
-
     document.addEventListener('keydown', (e) => {
       if (Player.open) return;
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
@@ -103,16 +138,17 @@ const App = {
       }
       if (e.key === 'Escape') {
         if (!$('#detail').classList.contains('hidden')) UI.closeDetail();
-        else if ($('#searchbox').classList.contains('open')) this.closeSearch();
+        else if (UI.view === 'search') UI.nav('home');
       }
       if (e.key === 'F11') { e.preventDefault(); window.bishop.window.toggleFullscreen(); }
     });
   },
 
   bindNav() {
-    U.on($('#topbar'), 'click', '[data-nav]', (_e, el) => UI.nav(el.dataset.nav));
-    $('#sourcesBtn').onclick = () => UI.nav('sources');
-    $('#settingsBtn').onclick = () => UI.nav('settings');
+    U.on($('#rail'), 'click', '[data-nav]', (_e, el) => {
+      if (el.dataset.nav === 'search') this.openSearch();
+      else UI.nav(el.dataset.nav);
+    });
 
     // Hero
     $('#heroPlay').onclick = () => { if (UI.heroRef) UI.playItem(UI.heroRef); };
@@ -227,25 +263,14 @@ const App = {
    * Busca
    * ================================================================ */
   openSearch() {
-    $('#searchbox').classList.add('open');
-    $('#searchInput').focus();
-  },
-
-  closeSearch() {
-    $('#searchbox').classList.remove('open');
-    $('#searchInput').value = '';
-    if (UI.view === 'search') UI.nav('home');
+    UI.nav('search');
+    // Na TV o foco fica no menu: o teclado só abre quando o usuário escolhe o
+    // campo (ver tvnav.js).
+    if (!document.documentElement.classList.contains('is-android')) $('#searchInput').focus();
   },
 
   bindSearch() {
-    $('#searchToggle').onclick = () => {
-      if ($('#searchbox').classList.contains('open') && !$('#searchInput').value) this.closeSearch();
-      else this.openSearch();
-    };
     $('#searchInput').addEventListener('input', U.debounce((e) => UI.doSearch(e.target.value), 260));
-    $('#searchInput').addEventListener('blur', () => {
-      if (!$('#searchInput').value) $('#searchbox').classList.remove('open');
-    });
     U.on($('#searchTabs'), 'click', '.chip', (_e, el) => {
       $$('#searchTabs .chip').forEach((c) => c.classList.toggle('active', c === el));
       UI.state.searchType = el.dataset.stype;

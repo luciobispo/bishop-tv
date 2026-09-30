@@ -22,46 +22,58 @@
   <div class="sp-sub" id="splashSub"></div>
 </div>
 
-<!-- ============ BARRA DE TÍTULO / NAVEGAÇÃO ============ -->
-<header id="topbar">
-  <div class="tb-drag"></div>
-  <div class="tb-inner">
-    <div class="brand" data-nav="home">
-      <img class="brand-logo" src="img/logo.png" alt="">
-      <span class="brand-word"><span class="brand-mark">BISHOP</span><span class="brand-tv">TV</span></span>
-    </div>
+<!-- ============ MENU LATERAL ============ -->
+<nav id="rail">
+  <div class="rail-brand"><img src="img/logo.png" alt="BishopTV"></div>
 
-    <nav class="mainnav" id="mainnav">
-      <button class="navitem active" data-nav="home">Início</button>
-      <button class="navitem" data-nav="live">TV ao Vivo</button>
-      <button class="navitem" data-nav="movies">Filmes</button>
-      <button class="navitem" data-nav="series">Séries</button>
-      <button class="navitem" data-nav="mylist">Minha Lista</button>
-    </nav>
-
-    <div class="tb-right">
-      <div class="searchbox" id="searchbox">
-        <button class="icon-btn" id="searchToggle" title="Buscar (Ctrl+K)">
-          <svg viewBox="0 0 24 24"><path d="M10 4a6 6 0 104.47 10.03l4.25 4.25 1.41-1.41-4.25-4.25A6 6 0 0010 4zm0 2a4 4 0 110 8 4 4 0 010-8z"/></svg>
-        </button>
-        <input type="text" id="searchInput" placeholder="Buscar canais, filmes, séries…" spellcheck="false">
-      </div>
-
-      <button class="icon-btn" id="sourcesBtn" title="Fontes / Listas">
-        <svg viewBox="0 0 24 24"><path d="M4 6h16v2H4zm0 5h16v2H4zm0 5h10v2H4z"/></svg>
-      </button>
-      <button class="icon-btn" id="settingsBtn" title="Configurações">
-        <svg viewBox="0 0 24 24"><path d="M12 8a4 4 0 100 8 4 4 0 000-8zm8.94 4a7.9 7.9 0 00-.2-1.73l2.1-1.6-2-3.46-2.47 1a8.1 8.1 0 00-1.5-.87l-.37-2.6h-4l-.37 2.6c-.53.22-1.03.51-1.5.87l-2.47-1-2 3.46 2.1 1.6a8 8 0 000 3.46l-2.1 1.6 2 3.46 2.47-1c.47.36.97.65 1.5.87l.37 2.6h4l.37-2.6c.53-.22 1.03-.51 1.5-.87l2.47 1 2-3.46-2.1-1.6c.13-.56.2-1.14.2-1.73z"/></svg>
-      </button>
-
-      <div class="winctl">
-        <button class="wc" id="wcMin" title="Minimizar"><span class="wc-min"></span></button>
-        <button class="wc" id="wcMax" title="Maximizar"><span class="wc-max"></span></button>
-        <button class="wc wc-close" id="wcClose" title="Fechar"><span class="wc-x"></span></button>
-      </div>
-    </div>
+  <div class="rail-nav">
+    <button class="rail-item" data-nav="search" title="Buscar (Ctrl+K)">
+      <span class="rail-ico"><svg viewBox="0 0 24 24"><path d="M10 4a6 6 0 104.47 10.03l4.25 4.25 1.41-1.41-4.25-4.25A6 6 0 0010 4zm0 2a4 4 0 110 8 4 4 0 010-8z"/></svg></span>
+      <span class="rail-label">Buscar</span>
+    </button>
+    <button class="rail-item active" data-nav="home">
+      <span class="rail-ico"><svg viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg></span>
+      <span class="rail-label">Início</span>
+    </button>
+    <button class="rail-item" data-nav="live">
+      <span class="rail-ico"><svg viewBox="0 0 24 24"><path d="M21 3H3a2 2 0 00-2 2v12a2 2 0 002 2h5v2h8v-2h5a2 2 0 002-2V5a2 2 0 00-2-2zm0 14H3V5h18z"/></svg></span>
+      <span class="rail-label">TV</span>
+    </button>
+    <button class="rail-item" data-nav="movies">
+      <span class="rail-ico"><svg viewBox="0 0 24 24"><path d="M18 4l2 4h-3l-2-4h-2l2 4h-3l-2-4H8l2 4H7L5 4H4a2 2 0 00-2 2v12a2 2 0 002 2h16a2 2 0 002-2V4z"/></svg></span>
+      <span class="rail-label">Filmes</span>
+    </button>
+    <button class="rail-item" data-nav="series">
+      <span class="rail-ico"><svg viewBox="0 0 24 24"><path d="M4 6H2v14a2 2 0 002 2h14v-2H4zm16-4H8a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2V4a2 2 0 00-2-2zm-8 12.5v-9l6 4.5z"/></svg></span>
+      <span class="rail-label">Séries</span>
+    </button>
+    <button class="rail-item" data-nav="mylist">
+      <span class="rail-ico"><svg viewBox="0 0 24 24"><path d="M17 3H7a2 2 0 00-2 2v16l7-3 7 3V5a2 2 0 00-2-2z"/></svg></span>
+      <span class="rail-label">Minha Lista</span>
+    </button>
   </div>
-</header>
+
+  <div class="rail-nav rail-bottom">
+    <button class="rail-item" data-nav="sources" title="Fontes / Listas">
+      <span class="rail-ico"><svg viewBox="0 0 24 24"><path d="M4 6h16v2H4zm0 5h16v2H4zm0 5h10v2H4z"/></svg></span>
+      <span class="rail-label">Listas</span>
+    </button>
+    <button class="rail-item" data-nav="settings" title="Configurações">
+      <span class="rail-ico"><svg viewBox="0 0 24 24"><path d="M12 8a4 4 0 100 8 4 4 0 000-8zm8.94 4a7.9 7.9 0 00-.2-1.73l2.1-1.6-2-3.46-2.47 1a8.1 8.1 0 00-1.5-.87l-.37-2.6h-4l-.37 2.6c-.53.22-1.03.51-1.5.87l-2.47-1-2 3.46 2.1 1.6a8 8 0 000 3.46l-2.1 1.6 2 3.46 2.47-1c.47.36.97.65 1.5.87l.37 2.6h4l.37-2.6c.53-.22 1.03-.51 1.5-.87l2.47 1 2-3.46-2.1-1.6c.13-.56.2-1.14.2-1.73z"/></svg></span>
+      <span class="rail-label">Config</span>
+    </button>
+  </div>
+</nav>
+
+<!-- Só no PC: faixa de arrastar a janela e botões minimizar/maximizar/fechar. -->
+<div id="titlebar">
+  <div class="tb-drag"></div>
+  <div class="winctl">
+    <button class="wc" id="wcMin" title="Minimizar"><span class="wc-min"></span></button>
+    <button class="wc" id="wcMax" title="Maximizar"><span class="wc-max"></span></button>
+    <button class="wc wc-close" id="wcClose" title="Fechar"><span class="wc-x"></span></button>
+  </div>
+</div>
 
 <!-- ============ CONTEÚDO ============ -->
 <main id="app">
@@ -72,16 +84,15 @@
       <div class="hero-bg" id="heroBg"></div>
       <div class="hero-fade"></div>
       <div class="hero-content">
-        <div class="hero-kicker" id="heroKicker"></div>
         <h1 class="hero-title" id="heroTitle"></h1>
-        <p class="hero-meta" id="heroMeta"></p>
         <p class="hero-desc" id="heroDesc"></p>
+        <div class="hero-meta" id="heroMeta"></div>
         <div class="hero-actions">
-          <button class="btn btn-play" id="heroPlay">
+          <button class="btn btn-play hero-btn" id="heroPlay">
             <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg> Assistir
           </button>
-          <button class="btn btn-ghost" id="heroInfo">
-            <svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 100 20 10 10 0 000-20zm1 15h-2v-6h2zm0-8h-2V7h2z"/></svg> Mais informações
+          <button class="btn btn-ghost hero-btn" id="heroInfo">
+            <svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6z"/></svg> Info
           </button>
         </div>
       </div>
@@ -168,6 +179,10 @@
   <!-- BUSCA -->
   <section class="view hidden" id="view-search">
     <div class="page-pad">
+      <div class="search-field">
+        <svg viewBox="0 0 24 24"><path d="M10 4a6 6 0 104.47 10.03l4.25 4.25 1.41-1.41-4.25-4.25A6 6 0 0010 4zm0 2a4 4 0 110 8 4 4 0 010-8z"/></svg>
+        <input type="text" id="searchInput" placeholder="Buscar canais, filmes, séries…" spellcheck="false" autocomplete="off">
+      </div>
       <h2 class="page-title" id="searchTitle">Buscar</h2>
       <div class="search-tabs" id="searchTabs">
         <button class="chip active" data-stype="all">Tudo</button>
@@ -176,7 +191,7 @@
         <button class="chip" data-stype="series">Séries</button>
       </div>
       <div class="grid grid-poster" id="searchGrid"></div>
-      <div class="empty hidden" id="searchEmpty">Nenhum resultado encontrado.</div>
+      <div class="empty hidden" id="searchEmpty"></div>
     </div>
   </section>
 
@@ -266,6 +281,22 @@
           <option value="normal" selected>Normal</option>
           <option value="high">Alto (mais estável)</option>
         </select>
+      </div>
+
+      <div class="setting">
+        <div>
+          <strong>Guia de programação (EPG)</strong>
+          <p class="muted" id="epgStatus"></p>
+        </div>
+        <button class="btn btn-ghost" id="epgRefreshBtn">Atualizar EPG</button>
+      </div>
+
+      <div class="setting">
+        <div>
+          <strong>Endereço do EPG</strong>
+          <p class="muted">Em branco, usa o guia do provedor. Vale para a lista em uso.</p>
+        </div>
+        <input type="text" id="setEpgUrl" class="mini-input wide" spellcheck="false">
       </div>
 
       <div class="setting">
@@ -490,6 +521,7 @@
 <script src="js/m3u.js"></script>
 <script src="js/xtream.js"></script>
 <script src="js/library.js"></script>
+<script src="js/epg.js"></script>
 <script src="js/player.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/app.js"></script>

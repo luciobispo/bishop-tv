@@ -75,7 +75,7 @@ const Lib = {
     let text = '';
     if (src.type === 'url') {
       report('Baixando lista…');
-      if (window.bishop.stream) return this._streamM3U(src.url, report);
+      if (window.bishop.stream) return this._streamM3U(src, report);
       const res = await window.bishop.get(src.url, { timeout: 120000 });
       if (!res.ok) throw new Error(res.error || 'Não foi possível baixar a lista');
       text = res.data;
@@ -95,8 +95,16 @@ const Lib = {
     }
 
     report('Interpretando a lista…');
-    const { items } = M3U.parse(text);
+    const { items, playlistAttrs } = M3U.parse(text);
+    this._keepTvgUrl(src, playlistAttrs);
     return items;
+  },
+
+  /** Endereço do guia declarado no cabeçalho da M3U (pode vir mais de um, separados por vírgula). */
+  _keepTvgUrl(src, attrs) {
+    const raw = (attrs && (attrs['url-tvg'] || attrs['x-tvg-url'])) || '';
+    const url = raw.split(',').map((s) => s.trim()).find((s) => /^https?:\/\//i.test(s)) || '';
+    if (url) src.tvgUrl = url; else delete src.tvgUrl;
   },
 
   looksLikeM3U(text) {
@@ -104,11 +112,11 @@ const Lib = {
   },
 
   /** Android: interpreta a lista enquanto ela é lida, sem montar o texto inteiro. */
-  async _streamM3U(url, report) {
+  async _streamM3U(src, report) {
     const parser = M3U.parser();
     let head = '';
     let reading = false;
-    const res = await window.bishop.stream(url, {
+    const res = await window.bishop.stream(src.url, {
       timeout: 120000,
       onChunk: (chunk) => {
         if (!reading) { reading = true; report('Interpretando a lista…'); }
@@ -120,7 +128,9 @@ const Lib = {
     if (!this.looksLikeM3U(head)) {
       throw new Error('O conteúdo não parece ser uma lista M3U válida.');
     }
-    return parser.end().items;
+    const { items, playlistAttrs } = parser.end();
+    this._keepTvgUrl(src, playlistAttrs);
+    return items;
   },
 
   /* ------------------------------------------------------------------
@@ -305,6 +315,9 @@ const Lib = {
   homeRows() {
     const rows = [];
 
+    const top = this.topRanked(10);
+    if (top) rows.push({ id: 'top', title: top.title, items: top.items, shape: 'rank' });
+
     // Continuar assistindo
     const cont = Store.continueList()
       .map((p) => {
@@ -389,6 +402,35 @@ const Lib = {
       if (withArt.length >= n) break;
     }
     return withArt.length >= n ? withArt.slice(0, n) : withArt.concat(without).slice(0, n);
+  },
+
+  /** Nota numérica (painéis mandam "7.4", "7,4" ou vazio); 0 = sem nota. */
+  rating(item) {
+    return parseFloat(String((item && item.rating) || '').replace(',', '.')) || 0;
+  },
+
+  /**
+   * Top 10 da home: os mais bem avaliados entre os filmes e séries que
+   * chegaram por último. Só o Xtream informa data e nota; numa .m3u vale a
+   * ordem da própria lista, que os painéis gravam com os mais novos primeiro.
+   * A janela cresce até juntar itens suficientes.
+   */
+  topRanked(n) {
+    const adult = /xxx|\+ ?18|adult/i;
+    const eligible = this.movies.concat(this.series).filter((i) => i.logo && !adult.test(i.group || ''));
+    const pool = eligible.filter((i) => i.added);
+    if (pool.length < n) {
+      const newest = this.movies.filter((i) => i.logo && !adult.test(i.group || '')).slice(0, n);
+      return newest.length >= n ? { title: 'Top 10 · Novidades', items: newest } : null;
+    }
+    const best = (list) => list.slice().sort((a, b) => this.rating(b) - this.rating(a)).slice(0, n);
+    const DAY = 864e5, now = Date.now();
+    for (const [days, title] of [[7, 'Top Semanal'], [30, 'Top do Mês']]) {
+      const recent = pool.filter((i) => now - i.added <= days * DAY);
+      if (recent.length >= n) return { title, items: best(recent) };
+    }
+    const newest = pool.slice().sort((a, b) => b.added - a.added).slice(0, 60);
+    return { title: 'Top 10 · Novidades', items: best(newest) };
   },
 
   /** Item para o banner da home. */

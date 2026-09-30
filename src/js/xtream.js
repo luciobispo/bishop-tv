@@ -137,6 +137,7 @@ const Xtream = {
         director: s.director || '',
         genre: s.genre || '',
         rating: s.rating || '',
+        added: s.last_modified ? Number(s.last_modified) * 1000 : 0,
         year: s.releaseDate ? String(s.releaseDate).slice(0, 4) : U.year(name),
         episodeRunTime: s.episode_run_time || '',
         lazyEpisodes: true,

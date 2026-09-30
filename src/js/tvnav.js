@@ -14,7 +14,7 @@ const TvNav = {
   EXCLUDE: '.card-fav, .winctl *, .row-arrow, #player *, [disabled]',
   // Ao entrar num destes grupos, o foco vai para o item ativo, não para o
   // mais próximo — ex.: de um canal para a esquerda cai na categoria atual.
-  GROUPS: '.cat-list, .mainnav, .tabs, .search-tabs',
+  GROUPS: '.cat-list, #rail, .tabs, .search-tabs',
   KEYS: { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' },
 
   lastMain: null,   // último foco fora dos modais, para voltar ao fechar um
@@ -135,13 +135,13 @@ const TvNav = {
     return null;
   },
 
-  /** Primeiro foco da tela: o que estava antes do modal, o botão principal ou o 1º card. */
+  /** Primeiro foco da tela: o que estava antes do modal, o "Assistir" do banner ou o 1º card. */
   entryPoint(scope) {
     if (scope === document.body) {
       if (this.lastMain && this.lastMain.isConnected && this.isVisible(this.lastMain)) return this.lastMain;
       const view = $('.view:not(.hidden)');
-      return (view && (view.querySelector('.card') || this.candidates(view)[0])) ||
-        $('.navitem.active') || this.candidates(scope)[0];
+      return (view && (view.querySelector('#heroPlay') || view.querySelector('.card') || this.candidates(view)[0])) ||
+        $('.rail-item.active') || this.candidates(scope)[0];
     }
     return scope.querySelector('.btn-play:not(.hidden)') || this.candidates(scope)[0];
   },
