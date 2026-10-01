@@ -73,6 +73,7 @@ const Player = {
     this.item = item;
     this.context = opts.list ? { list: opts.list, index: opts.index || 0 } : null;
     this.isLive = item.type === 'live';
+    this.aspectRatio = Store.get('aspectRatio') || 'fit';
     this.triedAlt = false;
     this._dnsRetried = false;
 
@@ -84,8 +85,10 @@ const Player = {
 
     $('#plTitle').textContent = item.title || item.name || '';
     $('#plSub').textContent = opts.subtitle || this.subtitleFor(item);
-    $('#plLiveBadge').classList.toggle('hidden', !this.isLive);
-    $('#plSeek').classList.toggle('disabled', this.isLive);
+    this.applyAspectRatio();
+    // Ao vivo não tem linha do tempo: no lugar dela entra o programa no ar.
+    $('#plSeek').classList.toggle('hidden', this.isLive);
+    this.renderEpg();
     $('#plSep').classList.toggle('hidden', this.isLive);
     $('#plDur').classList.toggle('hidden', this.isLive);
     $$('.vod-only').forEach((b) => b.classList.toggle('hidden', this.isLive));
@@ -116,12 +119,19 @@ const Player = {
         buffer: Store.get('buffer') || 'normal',
         title: item.title || item.name || '',
         subtitle: opts.subtitle || this.subtitleFor(item),
+        ...(this.isLive ? { epg: EPG.upcoming(item).map((p) => ({ title: p.title, start: p.start, stop: p.stop })) } : {}),
         userAgent: Store.get('userAgent') || '',
+        aspectRatio: Store.get('aspectRatio') || 'fit',
         startMs: Math.round((opts.resumeAt || 0) * 1000),
         live: this.isLive
       }) || {};
     } catch (err) {
       res = { error: String((err && err.message) || err) };
+    }
+
+    if (['4:3', '16:9', 'fit'].includes(res.aspectRatio)) {
+      this.aspectRatio = res.aspectRatio;
+      Store.set('aspectRatio', this.aspectRatio);
     }
 
     if (!this.isLive && res.durationMs > 0) {
@@ -153,12 +163,49 @@ const Player = {
     return ts && ts !== u ? { url: ts, fallbackUrl: u } : { url: u };
   },
 
+  /** Bloco "AO VIVO" do player: programa no ar, horários, progresso e o próximo. */
+  renderEpg() {
+    $('#plEpg').classList.toggle('hidden', !this.isLive);
+    if (!this.isLive || !this.item) return;
+    const nn = EPG.nowNext(this.item);
+    const now = nn && nn.now;
+    const next = nn && nn.next;
+    $('#plEpgNow').textContent = now ? now.title : '';
+    $('#plEpgBar').classList.toggle('hidden', !now);
+    if (now) {
+      $('#plEpgStart').textContent = EPG.hhmm(now.start);
+      $('#plEpgEnd').textContent = EPG.hhmm(now.stop);
+      $('#plEpgFill').style.width = (EPG.progress(now) * 100).toFixed(1) + '%';
+    }
+    $('#plEpgNext').textContent = next ? `A seguir: ${EPG.hhmm(next.start)} ${next.title}` : '';
+  },
+
   subtitleFor(item) {
-    if (item.type === 'live') return EPG.line(item) || item.group || '';
+    if (item.type === 'live') return item.group || '';
     if (item.season != null && item.episode != null) {
       return `T${item.season} E${item.episode}` + (item.seriesName ? ' · ' + item.seriesName : '');
     }
     return [item.year, item.group].filter(Boolean).join(' · ');
+  },
+
+  applyAspectRatio() {
+    const mode = ['4:3', '16:9'].includes(this.aspectRatio) ? this.aspectRatio : 'fit';
+    this.video.classList.toggle('aspect-4-3', mode === '4:3');
+    this.video.classList.toggle('aspect-16-9', mode === '16:9');
+    $('#plAspectBtn').title = `Proporção da tela: ${mode === 'fit' ? 'Ajustar à tela' : mode}`;
+    this.buildAspectMenu();
+  },
+
+  buildAspectMenu() {
+    const menu = $('#plAspectMenu');
+    const options = [
+      ['4:3', '4:3'],
+      ['16:9', '16:9'],
+      ['fit', 'Ajustar à tela']
+    ];
+    menu.innerHTML = '<div class="mh">Proporção da tela</div>' + options.map(([value, label]) =>
+      `<button data-aspect="${value}" class="${this.aspectRatio === value ? 'sel' : ''}">${label}</button>`
+    ).join('');
   },
 
   /** Escolhe o motor e inicia o stream. */
@@ -570,8 +617,7 @@ const Player = {
     this.stopProgressTimer();
     this.progressTimer = setInterval(() => {
       this.saveProgress();
-      // Ao vivo: a linha "Agora / A seguir" acompanha a troca de programa.
-      if (this.isLive && this.item) $('#plSub').textContent = this.subtitleFor(this.item);
+      if (this.isLive) this.renderEpg();  // acompanha a troca de programa
     }, 8000);
   },
 
@@ -681,6 +727,7 @@ const Player = {
         $('#player').classList.add('cursor-none');
         $('#plQualityMenu').classList.add('hidden');
         $('#plAudioMenu').classList.add('hidden');
+        $('#plAspectMenu').classList.add('hidden');
       }, 3200);
     }
   },
@@ -826,6 +873,20 @@ const Player = {
     };
     $('#plQualityBtn').onclick = (e) => { e.stopPropagation(); this.buildQualityMenu(); toggleMenu('#plQualityMenu', '#plAudioMenu'); };
     $('#plAudioBtn').onclick   = (e) => { e.stopPropagation(); this.buildAudioMenu();   toggleMenu('#plAudioMenu', '#plQualityMenu'); };
+    $('#plAspectBtn').onclick = (e) => {
+      e.stopPropagation();
+      $('#plQualityMenu').classList.add('hidden');
+      $('#plAudioMenu').classList.add('hidden');
+      this.buildAspectMenu();
+      $('#plAspectMenu').classList.toggle('hidden');
+    };
+
+    U.on($('#plAspectMenu'), 'click', 'button', (_e, b) => {
+      this.aspectRatio = b.dataset.aspect;
+      Store.set('aspectRatio', this.aspectRatio);
+      this.applyAspectRatio();
+      $('#plAspectMenu').classList.add('hidden');
+    });
 
     U.on($('#plQualityMenu'), 'click', 'button', (_e, b) => {
       if (this.hls) this.hls.currentLevel = parseInt(b.dataset.lvl, 10);
@@ -852,6 +913,7 @@ const Player = {
       if (!e.target.closest('.pl-menu-wrap')) {
         $('#plQualityMenu').classList.add('hidden');
         $('#plAudioMenu').classList.add('hidden');
+        $('#plAspectMenu').classList.add('hidden');
       }
     });
   },

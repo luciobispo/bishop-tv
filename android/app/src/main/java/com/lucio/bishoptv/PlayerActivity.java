@@ -13,9 +13,18 @@ import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
 import android.widget.ImageButton;
+import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.List;
 import java.util.Locale;
 
 import androidx.activity.OnBackPressedCallback;
@@ -41,6 +50,7 @@ import androidx.media3.exoplayer.source.MediaSource;
 import androidx.media3.extractor.DefaultExtractorsFactory;
 import androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory;
 import androidx.media3.ui.PlayerView;
+import androidx.media3.ui.AspectRatioFrameLayout;
 
 /**
  * Player em tela cheia com ExoPlayer (Media3). Devolve posição, duração e se
@@ -52,6 +62,7 @@ public class PlayerActivity extends AppCompatActivity {
     static final String EXTRA_URL = "url";
     static final String EXTRA_TITLE = "title";
     static final String EXTRA_SUBTITLE = "subtitle";
+    static final String EXTRA_ASPECT_RATIO = "aspectRatio";
     static final String EXTRA_USER_AGENT = "userAgent";
     static final String EXTRA_START_MS = "startMs";
     static final String EXTRA_LIVE = "live";
@@ -59,12 +70,14 @@ public class PlayerActivity extends AppCompatActivity {
     static final String EXTRA_BUFFER = "buffer";
     static final String EXTRA_CAN_FAVORITE = "canFavorite";
     static final String EXTRA_FAVORITE = "favorite";
+    static final String EXTRA_EPG = "epg";
 
     static final String RESULT_POSITION_MS = "positionMs";
     static final String RESULT_DURATION_MS = "durationMs";
     static final String RESULT_ENDED = "ended";
     static final String RESULT_ERROR = "error";
     static final String RESULT_FAVORITE = "favorite";
+    static final String RESULT_ASPECT_RATIO = "aspectRatio";
 
     private static final String DEFAULT_UA = "VLC/3.0.20 LibVLC/3.0.20";
     private static final int MAX_NETWORK_RETRIES = 2;
@@ -72,6 +85,9 @@ public class PlayerActivity extends AppCompatActivity {
 
     private ExoPlayer player;
     private PlayerView playerView;
+    private AspectRatioFrameLayout aspectFrame;
+    private ImageButton aspectButton;
+    private String aspectRatio = "fit";
     private String url;
     private String fallbackUrl;
     private String bufferPref;
@@ -89,6 +105,18 @@ public class PlayerActivity extends AppCompatActivity {
     private final Runnable hideOsd = () -> osd.animate().alpha(0f).setDuration(250)
         .withEndAction(() -> osd.setVisibility(View.GONE));
 
+    /** Programação do canal ao vivo, em ordem: {início, fim} em ms e o título. */
+    private final List<long[]> epgTimes = new ArrayList<>();
+    private final List<String> epgTitles = new ArrayList<>();
+    private static final long EPG_TICK_MS = 15000;
+    private final Runnable epgTick = new Runnable() {
+        @Override
+        public void run() {
+            renderEpg();
+            playerView.postDelayed(this, EPG_TICK_MS);
+        }
+    };
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -97,6 +125,8 @@ public class PlayerActivity extends AppCompatActivity {
         Intent in = getIntent();
         url = in.getStringExtra(EXTRA_URL);
         userAgent = in.getStringExtra(EXTRA_USER_AGENT);
+        String savedAspectRatio = in.getStringExtra(EXTRA_ASPECT_RATIO);
+        if ("4:3".equals(savedAspectRatio) || "16:9".equals(savedAspectRatio)) aspectRatio = savedAspectRatio;
         if (TextUtils.isEmpty(userAgent)) userAgent = DEFAULT_UA;
         live = in.getBooleanExtra(EXTRA_LIVE, false);
         fallbackUrl = in.getStringExtra(EXTRA_FALLBACK_URL);
@@ -105,6 +135,7 @@ public class PlayerActivity extends AppCompatActivity {
         canFavorite = in.getBooleanExtra(EXTRA_CAN_FAVORITE, false);
         favorite = in.getBooleanExtra(EXTRA_FAVORITE, false);
         long startMs = in.getLongExtra(EXTRA_START_MS, 0L);
+        parseEpg(in.getStringExtra(EXTRA_EPG));
 
         setContentView(buildLayout(in.getStringExtra(EXTRA_TITLE), in.getStringExtra(EXTRA_SUBTITLE)));
         hideSystemBars();
@@ -138,6 +169,12 @@ public class PlayerActivity extends AppCompatActivity {
             }
         });
         playerView.setPlayer(player);
+        player.addListener(new Player.Listener() {
+            @Override
+            public void onVideoSizeChanged(androidx.media3.common.VideoSize videoSize) {
+                applyAspectRatio();
+            }
+        });
 
         player.setMediaSource(buildSource(false));
         if (!live && startMs > 5000) player.seekTo(startMs);
@@ -154,6 +191,13 @@ public class PlayerActivity extends AppCompatActivity {
         // O controle é o layout player_controls.xml (ligado em player_view.xml).
         playerView = (PlayerView) getLayoutInflater().inflate(R.layout.player_view, root, false);
         root.addView(playerView);
+        View videoSurface = playerView.getVideoSurfaceView();
+        if (videoSurface != null && videoSurface.getParent() instanceof AspectRatioFrameLayout) {
+            aspectFrame = (AspectRatioFrameLayout) videoSurface.getParent();
+        }
+        aspectButton = playerView.findViewById(R.id.bishop_aspect);
+        aspectButton.setOnClickListener(v -> cycleAspectRatio());
+        applyAspectRatio();
 
         ((TextView) playerView.findViewById(R.id.bishop_title)).setText(title == null ? "" : title);
         if (!TextUtils.isEmpty(subtitle)) {
@@ -175,6 +219,9 @@ public class PlayerActivity extends AppCompatActivity {
             playerView.setShowRewindButton(false);
             playerView.setShowFastForwardButton(false);
             playerView.findViewById(R.id.bishop_timeline).setVisibility(View.GONE);
+            // No lugar dela: selo AO VIVO e o programa no ar.
+            playerView.findViewById(R.id.bishop_live).setVisibility(View.VISIBLE);
+            epgTick.run();
         }
 
         // Aviso do salto (⏪/⏩ e setas), visível mesmo com o controle escondido.
@@ -194,11 +241,94 @@ public class PlayerActivity extends AppCompatActivity {
 
     /* ------------------------------------------------------------------ */
 
+    private void parseEpg(String json) {
+        if (TextUtils.isEmpty(json)) return;
+        try {
+            JSONArray arr = new JSONArray(json);
+            for (int i = 0; i < arr.length(); i++) {
+                JSONObject p = arr.getJSONObject(i);
+                long start = p.optLong("start"), stop = p.optLong("stop");
+                if (stop <= start) continue;
+                epgTimes.add(new long[] { start, stop });
+                epgTitles.add(p.optString("title", ""));
+            }
+        } catch (JSONException e) {
+            epgTimes.clear();
+            epgTitles.clear();
+        }
+    }
+
+    /** Programa no ar, horários, quanto já passou e o próximo; some o que não houver. */
+    private void renderEpg() {
+        long now = System.currentTimeMillis();
+        int cur = -1, next = -1;
+        for (int i = 0; i < epgTimes.size(); i++) {
+            long[] t = epgTimes.get(i);
+            if (t[1] <= now) continue;
+            if (t[0] <= now && cur == -1) cur = i;
+            else { next = i; break; }
+        }
+
+        TextView title = playerView.findViewById(R.id.bishop_epg_now);
+        View bar = playerView.findViewById(R.id.bishop_epg_bar);
+        TextView nextView = playerView.findViewById(R.id.bishop_epg_next);
+
+        if (cur >= 0) {
+            long[] t = epgTimes.get(cur);
+            title.setText(epgTitles.get(cur));
+            ((TextView) playerView.findViewById(R.id.bishop_epg_start)).setText(hhmm(t[0]));
+            ((TextView) playerView.findViewById(R.id.bishop_epg_end)).setText(hhmm(t[1]));
+            ((ProgressBar) playerView.findViewById(R.id.bishop_epg_progress))
+                .setProgress((int) (1000 * (now - t[0]) / Math.max(1, t[1] - t[0])));
+            bar.setVisibility(View.VISIBLE);
+        } else {
+            title.setText("");
+            bar.setVisibility(View.GONE);
+        }
+
+        if (next >= 0) {
+            nextView.setText("A seguir: " + hhmm(epgTimes.get(next)[0]) + "  " + epgTitles.get(next));
+            nextView.setVisibility(View.VISIBLE);
+        } else {
+            nextView.setVisibility(View.GONE);
+        }
+    }
+
+    private static String hhmm(long ms) {
+        return new SimpleDateFormat("HH:mm", Locale.getDefault()).format(new Date(ms));
+    }
+
+    /* ------------------------------------------------------------------ */
+
     private void toggleFavorite() {
         favorite = !favorite;
         updateFavIcon();
         Toast.makeText(this, favorite ? "Adicionado à Minha Lista" : "Removido da Minha Lista",
             Toast.LENGTH_SHORT).show();
+    }
+
+    private void cycleAspectRatio() {
+        if ("4:3".equals(aspectRatio)) aspectRatio = "16:9";
+        else if ("16:9".equals(aspectRatio)) aspectRatio = "fit";
+        else aspectRatio = "4:3";
+        applyAspectRatio();
+        Toast.makeText(this, aspectRatioLabel(), Toast.LENGTH_SHORT).show();
+    }
+
+    private String aspectRatioLabel() {
+        return "Proporção: " + ("fit".equals(aspectRatio) ? "Ajustar à tela" : aspectRatio);
+    }
+
+    private void applyAspectRatio() {
+        if (aspectFrame == null) return;
+        if ("fit".equals(aspectRatio)) {
+            aspectFrame.setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_FIT);
+            aspectFrame.setAspectRatio(0f);
+        } else {
+            aspectFrame.setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_FILL);
+            aspectFrame.setAspectRatio("4:3".equals(aspectRatio) ? 4f / 3f : 16f / 9f);
+        }
+        aspectButton.setContentDescription(aspectRatioLabel());
     }
 
     private void updateFavIcon() {
@@ -431,6 +561,7 @@ public class PlayerActivity extends AppCompatActivity {
             data.putExtra(RESULT_DURATION_MS, duration == C.TIME_UNSET ? 0 : duration);
         }
         data.putExtra(RESULT_ENDED, ended);
+        data.putExtra(RESULT_ASPECT_RATIO, aspectRatio);
         if (canFavorite) data.putExtra(RESULT_FAVORITE, favorite);
         if (error != null) data.putExtra(RESULT_ERROR, error);
         setResult(RESULT_OK, data);
@@ -457,6 +588,7 @@ public class PlayerActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        if (playerView != null) playerView.removeCallbacks(epgTick);
         if (player != null) {
             player.release();
             player = null;

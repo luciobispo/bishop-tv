@@ -456,6 +456,19 @@
     </div>
 
     <div class="pl-bottom">
+      <!-- Ao vivo: selo + programa no ar (EPG), com barra de quanto já passou. -->
+      <div class="pl-epg hidden" id="plEpg">
+        <div class="pl-epg-head">
+          <div class="pl-live"><span class="dot"></span> AO VIVO</div>
+          <div class="pl-epg-now" id="plEpgNow"></div>
+        </div>
+        <div class="pl-epg-bar" id="plEpgBar">
+          <span id="plEpgStart"></span>
+          <div class="pl-epg-track"><i id="plEpgFill"></i></div>
+          <span id="plEpgEnd"></span>
+        </div>
+        <div class="pl-epg-next" id="plEpgNext"></div>
+      </div>
       <div class="pl-seek" id="plSeek">
         <div class="pl-seek-buf" id="plSeekBuf"></div>
         <div class="pl-seek-played" id="plSeekPlayed"></div>
@@ -471,8 +484,13 @@
           <input type="range" id="plVol" min="0" max="100" value="100">
         </div>
         <div class="pl-time"><span id="plCur">00:00</span><span class="sep" id="plSep"> / </span><span id="plDur">00:00</span></div>
-        <div class="pl-live hidden" id="plLiveBadge"><span class="dot"></span> AO VIVO</div>
         <div class="pl-spacer"></div>
+        <div class="pl-menu-wrap">
+          <button class="icon-btn" id="plAspectBtn" title="Proporção da tela">
+            <svg viewBox="0 0 24 24"><path d="M3 6h18v12H3zm2 2v8h14V8zM7 10h2v4H7zm4 0h2v4h-2zm4 0h2v4h-2z"/></svg>
+          </button>
+          <div class="pl-menu hidden" id="plAspectMenu"></div>
+        </div>
         <div class="pl-menu-wrap">
           <button class="icon-btn" id="plAudioBtn" title="Áudio e legendas">
             <svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 00-9 9v7h4v-7H5a7 7 0 1114 0h-2v7h2a2 2 0 002-2v-5a9 9 0 00-9-9z"/></svg>

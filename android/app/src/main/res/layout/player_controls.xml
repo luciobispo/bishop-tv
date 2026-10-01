@@ -75,6 +75,98 @@
         android:paddingRight="32dp"
         android:paddingBottom="18dp">
 
+        <!-- Ao vivo: selo, programa no ar (EPG) com horários e barra, e o próximo. -->
+        <LinearLayout
+            android:id="@+id/bishop_live"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="4dp"
+            android:gravity="center_horizontal"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <FrameLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="30dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="start|center_vertical"
+                    android:background="@drawable/player_live_badge"
+                    android:paddingLeft="10dp"
+                    android:paddingTop="4dp"
+                    android:paddingRight="10dp"
+                    android:paddingBottom="4dp"
+                    android:text="●  AO VIVO"
+                    android:textColor="#FFE50914"
+                    android:textSize="12sp"
+                    android:textStyle="bold" />
+
+                <!-- Margens laterais: o título centraliza sem passar por cima do selo. -->
+                <TextView
+                    android:id="@+id/bishop_epg_now"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center"
+                    android:layout_marginLeft="120dp"
+                    android:layout_marginRight="120dp"
+                    android:ellipsize="end"
+                    android:gravity="center"
+                    android:singleLine="true"
+                    android:textColor="#FFFFFFFF"
+                    android:textSize="19sp"
+                    android:textStyle="bold" />
+            </FrameLayout>
+
+            <LinearLayout
+                android:id="@+id/bishop_epg_bar"
+                android:layout_width="480dp"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/bishop_epg_start"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textColor="#FFDDDDDD"
+                    android:textSize="13sp" />
+
+                <ProgressBar
+                    android:id="@+id/bishop_epg_progress"
+                    style="?android:attr/progressBarStyleHorizontal"
+                    android:layout_width="0dp"
+                    android:layout_height="5dp"
+                    android:layout_marginLeft="12dp"
+                    android:layout_marginRight="12dp"
+                    android:layout_weight="1"
+                    android:max="1000"
+                    android:maxHeight="5dp"
+                    android:minHeight="5dp"
+                    android:progressDrawable="@drawable/player_epg_progress" />
+
+                <TextView
+                    android:id="@+id/bishop_epg_end"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textColor="#FFDDDDDD"
+                    android:textSize="13sp" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/bishop_epg_next"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:ellipsize="end"
+                android:singleLine="true"
+                android:textColor="#FFB8B8C2"
+                android:textSize="13sp" />
+        </LinearLayout>
+
         <LinearLayout
             android:id="@+id/bishop_timeline"
             android:layout_width="match_parent"
@@ -139,6 +231,12 @@
                 android:contentDescription="Minha Lista"
                 android:src="@drawable/ic_player_fav_off"
                 android:visibility="gone" />
+
+            <ImageButton
+                android:id="@+id/bishop_aspect"
+                style="@style/PlayerButton"
+                android:contentDescription="Proporção da tela"
+                android:src="@drawable/ic_player_aspect" />
 
             <ImageButton
                 android:id="@id/exo_settings"

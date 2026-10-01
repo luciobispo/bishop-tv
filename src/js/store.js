@@ -19,7 +19,8 @@ const Store = {
       resume: true,
       keepAwake: true,
       volume: 1,
-      muted: false
+      muted: false,
+      aspectRatio: 'fit'
     }
   },
 

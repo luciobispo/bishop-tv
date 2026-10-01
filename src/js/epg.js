@@ -284,21 +284,22 @@ const EPG = {
     return { now: cur ? this._obj(cur) : null, next: next ? this._obj(next) : null };
   },
 
+  /**
+   * Programa no ar e os seguintes. O player nativo do Android recebe essa
+   * lista ao abrir o canal e troca de programa sozinho, sem voltar ao app.
+   */
+  upcoming(item, n = 12, at = Date.now()) {
+    const id = this.channelId(item);
+    const list = id && this.byId.get(id);
+    if (!list) return [];
+    return list.filter((p) => p[1] > at).slice(0, n).map((p) => this._obj(p));
+  },
+
   _obj(p) { return { start: p[0], stop: p[1], title: p[2], desc: p[3] }; },
 
   progress(p, at = Date.now()) {
     return Math.min(1, Math.max(0, (at - p.start) / Math.max(1, p.stop - p.start)));
   },
 
-  hhmm(t) { return new Date(t).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }); },
-
-  /** Uma linha para o player: "Agora: X (20:00–21:00) · A seguir: 21:00 Y". */
-  line(item) {
-    const nn = this.nowNext(item);
-    if (!nn) return '';
-    const parts = [];
-    if (nn.now) parts.push(`Agora: ${nn.now.title} (${this.hhmm(nn.now.start)}–${this.hhmm(nn.now.stop)})`);
-    if (nn.next) parts.push(`A seguir: ${this.hhmm(nn.next.start)} ${nn.next.title}`);
-    return parts.join(' · ');
-  }
+  hhmm(t) { return new Date(t).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }); }
 };

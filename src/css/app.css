@@ -562,7 +562,10 @@ kbd {
 
 /* ======================= PLAYER ======================= */
 #player { position: fixed; inset: 0; z-index: 120; background: #000; }
-#video { width: 100%; height: 100%; object-fit: contain; background: #000; outline: none; }
+#video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; outline: none; }
+#video.aspect-4-3, #video.aspect-16-9 { inset: auto; top: 50%; left: 50%; object-fit: fill; transform: translate(-50%, -50%); }
+#video.aspect-4-3 { width: min(100vw, 133.333vh); height: min(75vw, 100vh); }
+#video.aspect-16-9 { width: min(100vw, 177.778vh); height: min(56.25vw, 100vh); }
 
 .pl-ui {
   position: absolute; inset: 0; display: flex; flex-direction: column;
@@ -616,7 +619,28 @@ kbd {
   accent-color: var(--accent); cursor: pointer;
 }
 .pl-vol:hover input { width: 82px; opacity: 1; margin: 0 8px 0 2px; }
-.pl-live { display: flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 800; letter-spacing: 1px; color: var(--accent); margin-left: 8px; }
+.pl-live { display: flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 800; letter-spacing: 1px; color: var(--accent); }
+
+/* Ao vivo: selo à esquerda, programa no ar centralizado, barra e o próximo. */
+.pl-epg { display: flex; flex-direction: column; align-items: center; gap: 6px; margin-bottom: 10px; }
+.pl-epg-head { position: relative; width: 100%; display: flex; justify-content: center; align-items: center; min-height: 26px; }
+.pl-epg-head .pl-live {
+  position: absolute; left: 0; top: 50%; transform: translateY(-50%);
+  background: rgba(229,9,20,.14); border: 1px solid rgba(229,9,20,.45);
+  padding: 4px 10px; border-radius: 5px;
+}
+.pl-epg-now {
+  max-width: calc(100% - 260px); font-size: 19px; font-weight: 700; text-align: center;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.pl-epg-bar {
+  display: flex; align-items: center; gap: 12px; width: min(620px, 70%);
+  font-size: 12.5px; color: #ddd; font-variant-numeric: tabular-nums;
+}
+.pl-epg-track { flex: 1; height: 5px; border-radius: 3px; background: rgba(255,255,255,.22); overflow: hidden; }
+.pl-epg-track i { display: block; height: 100%; background: var(--accent); border-radius: 3px; transition: width .6s var(--ease); }
+.pl-epg-next { font-size: 13px; color: var(--txt-dim); text-align: center; max-width: 80%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pl-epg-next:empty { display: none; }
 .pl-live .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); animation: pulse 1.6s infinite; }
 
 .pl-menu-wrap { position: relative; }
