@@ -420,8 +420,14 @@ const UI = {
     if (input.value !== q) input.value = q;
     const empty = $('#searchEmpty');
     const tabs = $('#searchTabs');
+    const grid = $('#searchGrid');
     const show = (html) => {
-      $('#searchGrid').innerHTML = '';
+      // Solta também as capas e a paginação da grade anterior.
+      const io = this._imgIOs.get(grid);
+      if (io) io.disconnect();
+      if (this._io) this._io.disconnect();
+      grid.innerHTML = '';
+      grid.dataset.mode = '';
       empty.innerHTML = html;
       empty.classList.remove('hidden');
     };
@@ -430,6 +436,8 @@ const UI = {
     // Sem termo: buscas populares no lugar dos resultados.
     if (q.trim().length < 2) {
       tabs.classList.add('hidden');
+      // A 1ª letra digitada (ou apagar até ela) não refaz os cartões e capas.
+      if (grid.dataset.mode === 'popular' && grid.firstChild) return;
       const top = Lib.topRanked(20);
       if (!top) {
         $('#searchTitle').textContent = 'Buscar';
@@ -437,7 +445,9 @@ const UI = {
       }
       $('#searchTitle').textContent = `Populares · ${top.title}`;
       empty.classList.add('hidden');
-      return this.renderGrid($('#searchGrid'), top.items, 'poster');
+      this.renderGrid(grid, top.items, 'poster');
+      grid.dataset.mode = 'popular';
+      return;
     }
 
     $('#searchTitle').textContent = `Resultados para “${q}”`;
@@ -457,7 +467,8 @@ const UI = {
       return show(`<div class="empty-title">Nenhum resultado</div><ol class="empty-hints">${other}</ol>`);
     }
     empty.classList.add('hidden');
-    this.renderGrid($('#searchGrid'), items, 'poster');
+    this.renderGrid(grid, items, 'poster');
+    grid.dataset.mode = '';
   },
 
   renderRecentSearches(q) {

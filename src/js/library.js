@@ -348,22 +348,16 @@ const Lib = {
     const hits = [];
     for (const [kind, pool] of [['series', this.series], ['movie', this.movies], ['live', this.live]]) {
       const keep = !want || want === kind;
-      let kept = 0;
       for (let i = 0; i < pool.length; i++) {
         const it = pool[i];
         const n = it._n || (it._n = U.norm(it.title || it.name));
         let ok = true;
         for (const t of terms) { if (!n.includes(t)) { ok = false; break; } }
-        let initials = false;
-        if (!ok && byInitials) {
-          const ini = it._i || (it._i = n.split(' ').map((w) => w[0]).join(''));
-          ok = initials = ini.startsWith(q);
-        }
-        if (!ok) continue;
+        const initials = !ok && byInitials && this._initialsStart(n, q);
+        if (!ok && !initials) continue;
         counts[kind]++;
         // A contagem é exata; a lista para de crescer para não ordenar demais.
-        if (!keep || kept > max * 4) continue;
-        kept++;
+        if (!keep || hits.length > max * 4) continue;
         // Pontuação: começo do nome > palavra inteira > iniciais > substring
         let score;
         if (initials) score = 1.5;
@@ -379,6 +373,21 @@ const Lib = {
 
     hits.sort((a, b) => b.score - a.score || (a.it.title || '').localeCompare(b.it.title || '', 'pt-BR'));
     return { items: hits.slice(0, max).map((h) => h.it), counts };
+  },
+
+  /**
+   * As iniciais das palavras de `n` começam com `q`? Compara letra a letra
+   * em vez de guardar as iniciais no item: num catálogo de 100 mil itens
+   * seriam ~2 MB a mais presos na memória do Firestick.
+   */
+  _initialsStart(n, q) {
+    let k = 0;
+    for (let i = 0; i < n.length && k < q.length; i++) {
+      if (i > 0 && n.charCodeAt(i - 1) !== 32) continue;
+      if (n[i] !== q[k]) return false;
+      k++;
+    }
+    return k === q.length;
   },
 
   /* ------------------------------------------------------------------
