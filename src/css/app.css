@@ -500,9 +500,13 @@ kbd {
 /* ======================= OVERLAYS ======================= */
 .overlay {
   position: fixed; inset: 0; z-index: 90; background: rgba(6,6,9,.84);
-  backdrop-filter: blur(6px); display: grid; place-items: center;
-  animation: fadeIn .2s var(--ease); overflow-y: auto;
+  backdrop-filter: blur(6px); display: grid; justify-items: center; align-items: start;
+  padding: 40px 0; animation: fadeIn .2s var(--ease); overflow-y: auto;
 }
+/* Centraliza só quando cabe: com place-items:center, uma série com muitos
+   episódios ficava mais alta que a tela e o topo (título, Assistir, fechar)
+   saía acima da janela, onde não dá para rolar. Margem automática vira 0. */
+.overlay > * { margin-top: auto; margin-bottom: auto; }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
 /* menu do item (ocultar) */
@@ -547,7 +551,7 @@ kbd {
 
 /* detalhe */
 .detail-card {
-  width: min(880px, 94vw); margin: 40px auto; background: #131318;
+  width: min(880px, 94vw); background: #131318;
   border-radius: var(--radius-lg); overflow: hidden; position: relative;
   box-shadow: 0 30px 80px rgba(0,0,0,.8);
   animation: popIn .26s var(--ease);
@@ -585,6 +589,7 @@ kbd {
   transition: background .15s;
 }
 .ep-item:hover { background: rgba(255,255,255,.05); }
+.is-android .ep-item:focus { background: rgba(255,255,255,.12); box-shadow: 0 0 0 3px #fff; }
 .ep-num { font-size: 19px; color: var(--txt-faint); text-align: center; }
 .ep-item.seen .ep-num { color: #46d369; }
 .ep-seen {

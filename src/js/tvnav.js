@@ -9,7 +9,7 @@
 'use strict';
 
 const TvNav = {
-  CANDIDATES: 'button, input, select, textarea, a[href], .card',
+  CANDIDATES: 'button, input, select, textarea, a[href], .card, .ep-item',
   // O coração do card só aparece com mouse; o favorito fica no detalhe.
   EXCLUDE: '.card-fav, .winctl *, .row-arrow, #player *, [disabled]',
   // Ao entrar num destes grupos, o foco vai para o item ativo, não para o
