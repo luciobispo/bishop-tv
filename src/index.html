@@ -336,6 +336,15 @@
         <button class="btn btn-ghost" id="clearHistoryBtn">Apagar</button>
       </div>
 
+      <div class="setting">
+        <div>
+          <strong>Conteúdo oculto</strong>
+          <p class="muted">Canais, filmes, séries e categorias que você escondeu dos catálogos, da busca e da home.</p>
+        </div>
+        <button class="btn btn-ghost hidden" id="unhideAllBtn">Mostrar tudo</button>
+      </div>
+      <div class="hidden-list" id="hiddenList"></div>
+
       <h3 class="section-title">Atalhos de teclado</h3>
       <div class="keys">
         <div><kbd>Espaço</kbd> / <kbd>K</kbd> Play / pausa</div>
@@ -352,6 +361,14 @@
   </section>
 
 </main>
+
+<!-- ============ MENU DO ITEM (ocultar) ============ -->
+<div id="ctxMenu" class="overlay hidden">
+  <div class="ctx-box" role="menu">
+    <div class="ctx-title" id="ctxTitle"></div>
+    <div class="ctx-actions" id="ctxActions"></div>
+  </div>
+</div>
 
 <!-- ============ ONBOARDING ============ -->
 <div id="onboarding" class="overlay hidden">

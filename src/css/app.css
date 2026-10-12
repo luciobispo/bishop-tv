@@ -505,6 +505,25 @@ kbd {
 }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
+/* menu do item (ocultar) */
+#ctxMenu { z-index: 110; }
+.ctx-box {
+  background: var(--bg-elev); border: 1px solid var(--line); border-radius: var(--radius-lg);
+  padding: 22px; width: min(420px, calc(100vw - 32px)); box-shadow: var(--shadow-card);
+}
+.ctx-title { font-size: 17px; font-weight: 680; margin-bottom: 16px; overflow-wrap: anywhere; }
+.ctx-actions { display: flex; flex-direction: column; gap: 8px; }
+.ctx-actions .btn { justify-content: center; width: 100%; }
+
+/* conteúdo oculto (Configurações) */
+.hidden-list { margin: -6px 0 18px; }
+.hidden-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  padding: 10px 0; border-bottom: 1px solid var(--line-soft);
+}
+.hidden-row strong { display: block; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.hidden-row .muted { font-size: 12px; }
+
 /* onboarding */
 .onb { text-align: center; max-width: 880px; padding: 40px; }
 .onb-brand {

@@ -100,6 +100,7 @@ const Lib = {
     this.movies = [];
     this.series = [];
     this.cats = { live: [], movie: [], series: [] };
+    this._full = null;
     this.byKey = new Map();
     this.seriesByKey = new Map();
   },
@@ -256,11 +257,8 @@ const Lib = {
       s.epCount = s.episodes.length;
     }
 
-    this.cats = {
-      live: this._cats(this.live),
-      movie: this._cats(this.movies),
-      series: this._cats(this.series)
-    };
+    this._full = { live: this.live, movie: this.movies, series: this.series };
+    this.applyHidden();
 
     if (onProgress) {
       onProgress(`${this.live.length} canais · ${this.movies.length} filmes · ${this.series.length} séries`);
@@ -303,6 +301,35 @@ const Lib = {
     return Array.from(m.entries())
       .map(([name, count]) => ({ name, count, id: U.hash(name) }))
       .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'pt-BR'));
+  },
+
+  /* ------------------------------------------------------------------
+   * Conteúdo oculto
+   * ------------------------------------------------------------------ */
+  isHidden(it) {
+    const h = Store.data.hidden;
+    return !!(h.items[it.seriesKey || it.key] || h.groups[`${it.type}|${it.group || 'Diversos'}`]);
+  },
+
+  /**
+   * live/movies/series passam a ser só o que está visível: catálogos, busca,
+   * fileiras da home e a troca de canal no player já leem daqui. As listas
+   * completas ficam em _full. Sem nada oculto, são os mesmos arrays — nenhuma
+   * cópia a mais na memória.
+   */
+  applyHidden() {
+    const full = this._full || (this._full = { live: this.live, movie: this.movies, series: this.series });
+    const h = Store.data.hidden;
+    const any = Object.keys(h.items).length > 0 || Object.keys(h.groups).length > 0;
+    const visible = (list) => (any ? list.filter((i) => !this.isHidden(i)) : list);
+    this.live = visible(full.live);
+    this.movies = visible(full.movie);
+    this.series = visible(full.series);
+    this.cats = {
+      live: this._cats(this.live),
+      movie: this._cats(this.movies),
+      series: this._cats(this.series)
+    };
   },
 
   listOf(type) {
@@ -405,7 +432,7 @@ const Lib = {
         const live = this.get(p.key);
         return { ...p, ...(live || {}), _progress: p };
       })
-      .filter((x) => x.url || x.key);
+      .filter((x) => (x.url || x.key) && !this.isHidden(x));
     if (cont.length) {
       rows.push({ id: 'continue', title: 'Continuar assistindo', items: cont, shape: 'wide' });
     }
@@ -413,6 +440,7 @@ const Lib = {
     // Minha lista
     const favs = Store.favList()
       .map((f) => this.get(f.key) || f)
+      .filter((f) => !this.isHidden(f))
       .slice(0, 24);
     if (favs.length) {
       rows.push({ id: 'fav', title: 'Minha Lista', items: favs, shape: 'poster', nav: 'mylist' });

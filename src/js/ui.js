@@ -272,12 +272,26 @@ const UI = {
       if (g.movie.length)  rows.push({ id: 'fm', title: 'Filmes salvos',  items: g.movie,  shape: 'poster' });
       if (g.live.length)   rows.push({ id: 'fl', title: 'Canais favoritos', items: g.live, shape: 'logo' });
     }
+    for (const r of rows) r.items = r.items.filter((i) => !Lib.isHidden(i));
     const host = $('#mylistRows');
-    if (!rows.length) {
+    if (!rows.some((r) => r.items.length)) {
       host.innerHTML = '<div class="empty">Sua lista está vazia.<br><br>Passe o mouse sobre qualquer capa e clique no <b>+</b> para salvar aqui.</div>';
       return;
     }
-    this.renderRows(host, rows);
+    this.renderRows(host, rows.filter((r) => r.items.length));
+  },
+
+  /** Redesenha a tela atual no lugar (sem voltar ao topo), ex.: depois de ocultar algo. */
+  refreshView() {
+    const type = { live: 'live', movies: 'movie', series: 'series' }[this.view];
+    if (type) {
+      const st = this.state[type];
+      if (!st.cat.startsWith('__') && !Lib.cats[type].some((c) => c.name === st.cat)) st.cat = '__all__';
+      this.renderCatalog(type);
+    } else if (this.view === 'home') this.renderHome();
+    else if (this.view === 'mylist') this.renderMyList();
+    else if (this.view === 'search') { $('#searchGrid').dataset.mode = ''; this.renderSearch(); }
+    else if (this.view === 'settings') this.renderHidden();
   },
 
   /* ================================================================
@@ -796,10 +810,26 @@ const UI = {
     $('#setBuffer').value = Store.get('buffer') || 'normal';
     $('#setResume').checked = !!Store.get('resume');
     $('#setAwake').checked = !!Store.get('keepAwake');
+    this.renderHidden();
     const info = await window.bishop.appInfo();
     $('#aboutInfo').innerHTML =
       `BishopTV v${U.esc(info.version)} · ${U.esc(info.platform || 'Electron ' + info.electron)} · Chromium ${U.esc(info.chrome)}<br>` +
       `Dados salvos em: ${U.esc(info.userData)}<br><br>` +
       `Este app apenas reproduz as listas que você fornece — ele não inclui, hospeda nem distribui nenhum conteúdo.`;
+  },
+
+  renderHidden() {
+    const h = Store.data.hidden;
+    const noun = { live: 'Canal', movie: 'Filme', series: 'Série' };
+    const cat = { live: 'TV ao Vivo', movie: 'Filmes', series: 'Séries' };
+    const rows = [
+      ...Object.values(h.groups).map((g) => ({ id: g.id, at: g.at, label: g.name, kind: `Categoria · ${cat[g.type] || g.type}` })),
+      ...Object.values(h.items).map((i) => ({ id: i.key, at: i.at, label: i.name, kind: noun[i.type] || 'Item' }))
+    ].sort((a, b) => b.at - a.at);
+    $('#unhideAllBtn').classList.toggle('hidden', !rows.length);
+    $('#hiddenList').innerHTML = rows.length
+      ? rows.map((r) => `<div class="hidden-row"><div><strong>${U.esc(r.label)}</strong><span class="muted">${U.esc(r.kind)}</span></div>` +
+        `<button class="btn btn-ghost sm" data-unhide="${U.esc(r.id)}">Mostrar</button></div>`).join('')
+      : '<p class="muted">Nada oculto. Para ocultar, clique com o botão direito numa capa ou categoria — na TV, segure OK ou aperte o botão ☰.</p>';
   }
 };

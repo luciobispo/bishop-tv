@@ -182,6 +182,8 @@
   }
 
   AppPlugin.addListener('backButton', () => {
+    const menu = document.querySelector('#ctxMenu');
+    if (menu && !menu.classList.contains('hidden')) return App.closeItemMenu();
     const detail = document.querySelector('#detail');
     if (detail && !detail.classList.contains('hidden')) return UI.closeDetail();
     const search = document.querySelector('#searchInput');

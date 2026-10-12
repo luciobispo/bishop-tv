@@ -16,16 +16,22 @@ const TvNav = {
   // mais próximo — ex.: de um canal para a esquerda cai na categoria atual.
   GROUPS: '.cat-list, #rail, .tabs, .search-tabs',
   KEYS: { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' },
+  MODALS: ['#ctxMenu', '#detail', '#onboarding'],
+  // Segurar OK num card/categoria abre o menu de ocultar (App.openItemMenu).
+  MENU_TARGETS: '.card, .cat-item',
+  LONG_PRESS_MS: 550,
+  press: null,      // OK pressionado num card: o clique sai ao soltar
 
   lastMain: null,   // último foco fora dos modais, para voltar ao fechar um
 
   init() {
     if (!document.documentElement.classList.contains('is-android')) return;
     document.addEventListener('keydown', (e) => this.onKey(e), true);
+    document.addEventListener('keyup', (e) => this.onKeyUp(e), true);
     document.addEventListener('focusout', (e) => this.restoreField(e.target), true);
 
     // Abrir um modal leva o foco para ele; fechar devolve ao card de origem.
-    for (const id of ['#detail', '#onboarding']) {
+    for (const id of this.MODALS) {
       const el = $(id);
       if (!el) continue;
       let open = !el.classList.contains('hidden');
@@ -40,7 +46,7 @@ const TvNav = {
 
   /** Modal aberto limita a navegação a ele. */
   scope() {
-    for (const id of ['#detail', '#onboarding']) {
+    for (const id of this.MODALS) {
       const el = $(id);
       if (el && !el.classList.contains('hidden')) return el;
     }
@@ -68,6 +74,20 @@ const TvNav = {
     const cur = document.activeElement;
     const scope = this.scope();
 
+    // O menu abriu com o OK ainda segurado: as repetições não podem clicar
+    // na primeira opção (ocultaria sem o usuário escolher).
+    if (e.key === 'Enter' && this.press && this.press.menu && Date.now() - this.press.last < 400) {
+      this.press.last = Date.now();
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+    const menuTarget = scope === document.body && cur && cur.matches && cur.matches(this.MENU_TARGETS);
+    if (e.key === 'ContextMenu' && menuTarget) {
+      e.preventDefault();
+      return App.openItemMenu(cur);
+    }
+    if (e.key === 'Enter' && menuTarget) return this.holdOk(e, cur);
     if (e.key === 'Enter') return this.activate(e, cur);
 
     const dir = this.KEYS[e.key];
@@ -94,6 +114,35 @@ const TvNav = {
     }
     const next = this.find(from, dir, this.candidates(scope));
     if (next) this.focus(next, cur);
+  },
+
+  /**
+   * OK num card: o clique só sai ao soltar. Segurado (o controle repete o
+   * keydown), abre o menu de ocultar no lugar do clique.
+   */
+  holdOk(e, el) {
+    e.preventDefault();
+    e.stopPropagation();
+    const now = Date.now(), p = this.press;
+    // Repetições chegam a cada ~50 ms; um keydown depois de uma pausa é um
+    // toque novo (o keyup do anterior pode ter se perdido).
+    if (!p || p.el !== el || now - p.last > 400) {
+      this.press = { el, at: now, last: now, menu: false };
+      return;
+    }
+    p.last = now;
+    if (!p.menu && now - p.at >= this.LONG_PRESS_MS) {
+      p.menu = true;
+      App.openItemMenu(el);
+    }
+  },
+
+  onKeyUp(e) {
+    if (e.key !== 'Enter' || !this.press) return;
+    const { el, menu } = this.press;
+    this.press = null;
+    e.preventDefault();
+    if (!menu && el.isConnected && !(typeof Player !== 'undefined' && Player.open)) el.click();
   },
 
   /** OK do controle. */

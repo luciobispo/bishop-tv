@@ -11,6 +11,9 @@ const Store = {
     progress: {},       // { [itemKey]: {pos, dur, at, name, logo, type, url, seriesKey?, ...} }
     recent: [],         // [itemKey] mais recentes primeiro
     searches: [],       // termos buscados, mais recentes primeiro
+    // Ocultos pelo usuário. Itens pela chave (série inteira pela seriesKey);
+    // categorias por "tipo|nome", valendo para qualquer fonte.
+    hidden: { items: {}, groups: {} },
     // Filmes e episódios assistidos. Diferente de `progress`, não some quando o
     // item termina: é o que permite marcar "assistido" e retomar séries.
     history: {},        // { [itemKey]: {key, name, title, logo, type, url, seriesKey?, seriesName?, seriesLogo?, season?, episode?, pos, dur, at, done, sourceId} }
@@ -39,6 +42,7 @@ const Store = {
     this.data.progress = this.data.progress || {};
     this.data.recent = this.data.recent || [];
     this.data.searches = this.data.searches || [];
+    this.data.hidden = { items: {}, groups: {}, ...(this.data.hidden || {}) };
     if (!saved || !saved.history) this._seedHistory();
     return this.data;
   },
@@ -217,6 +221,30 @@ const Store = {
 
   clearSearches() {
     this.data.searches = [];
+    this.save();
+  },
+
+  /* ---------------- conteúdo oculto ---------------- */
+  hideItem(item) {
+    const key = item.seriesKey || item.key;
+    this.data.hidden.items[key] = { key, name: item.title || item.name || '', type: item.type, at: Date.now() };
+    this.save();
+  },
+
+  hideGroup(type, name) {
+    const id = `${type}|${name}`;
+    this.data.hidden.groups[id] = { id, type, name, at: Date.now() };
+    this.save();
+  },
+
+  unhide(id) {
+    delete this.data.hidden.items[id];
+    delete this.data.hidden.groups[id];
+    this.save();
+  },
+
+  unhideAll() {
+    this.data.hidden = { items: {}, groups: {} };
     this.save();
   },
 

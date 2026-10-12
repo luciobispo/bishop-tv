@@ -22,6 +22,7 @@ const App = {
     this.bindSources();
     this.bindSettings();
     this.bindSearch();
+    this.bindHide();
 
     const active = Store.activeSourceObj();
     if (!active) {
@@ -97,7 +98,8 @@ const App = {
         this.openSearch();
       }
       if (e.key === 'Escape') {
-        if (!$('#detail').classList.contains('hidden')) UI.closeDetail();
+        if (!$('#ctxMenu').classList.contains('hidden')) this.closeItemMenu();
+        else if (!$('#detail').classList.contains('hidden')) UI.closeDetail();
         else if (UI.view === 'search') UI.nav('home');
       }
       if (e.key === 'F11') { e.preventDefault(); window.bishop.window.toggleFullscreen(); }
@@ -266,6 +268,65 @@ const App = {
     $('#searchGrid').addEventListener('click', (e) => {
       if (e.target.closest('.card')) Store.pushSearch(UI.state.searchQuery);
     }, true);
+  },
+
+  /* ================================================================
+   * Ocultar canais, filmes, séries e categorias
+   * Menu: botão direito no PC; na TV, segurar OK ou o botão ☰ (tvnav.js).
+   * ================================================================ */
+  bindHide() {
+    U.on($('#app'), 'contextmenu', '.card, .cat-item', (e, el) => {
+      e.preventDefault();
+      this.openItemMenu(el);
+    });
+    $('#ctxMenu').addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-act]');
+      if (!btn && e.target !== e.currentTarget) return;
+      const act = btn && this._ctxActs[btn.dataset.act];
+      this.closeItemMenu();
+      if (act) act();
+    });
+  },
+
+  openItemMenu(el) {
+    const acts = [];
+    let title;
+    if (el.classList.contains('cat-item')) {
+      const name = el.dataset.cat;
+      const type = ['live', 'movie', 'series'].find((t) => $(UI.catalogRefs(t).cats).contains(el));
+      if (!type || name.startsWith('__')) return;
+      title = name;
+      acts.push(['Ocultar categoria', () => this.hide(() => Store.hideGroup(type, name), `Categoria “${name}” oculta`)]);
+    } else {
+      const item = Lib.get(el.dataset.key);
+      if (!item) return;
+      // Episódio solto (.m3u) ou série: oculta a série inteira.
+      const target = (item.seriesKey && Lib.seriesByKey.get(item.seriesKey)) || item;
+      const noun = { live: 'canal', movie: 'filme', series: 'série' }[target.type] || 'item';
+      const group = target.group || 'Diversos';
+      title = target.title || target.name;
+      acts.push([`Ocultar ${noun}`, () => this.hide(() => Store.hideItem(target), `“${title}” oculto`)]);
+      if (target.type in { live: 1, movie: 1, series: 1 }) {
+        acts.push([`Ocultar categoria “${group}”`, () => this.hide(() => Store.hideGroup(target.type, group), `Categoria “${group}” oculta`)]);
+      }
+    }
+    this._ctxActs = acts.map((a) => a[1]);
+    $('#ctxTitle').textContent = title;
+    $('#ctxActions').innerHTML = acts.map(([label], i) =>
+      `<button class="btn ${i ? 'btn-ghost' : 'btn-play'}" data-act="${i}">${U.esc(label)}</button>`).join('') +
+      '<button class="btn btn-ghost" data-act="-1">Cancelar</button>';
+    $('#ctxMenu').classList.remove('hidden');
+  },
+
+  closeItemMenu() {
+    $('#ctxMenu').classList.add('hidden');
+  },
+
+  hide(apply, msg) {
+    apply();
+    Lib.applyHidden();
+    UI.refreshView();
+    U.toast(`${msg}. Para mostrar de novo: Configurações › Conteúdo oculto.`, 'ok', 5500);
   },
 
   /* ================================================================
@@ -507,6 +568,15 @@ const App = {
       await window.bishop.cache.clear();
       U.toast('Cache limpo. Use “Atualizar” em Fontes para recarregar.', 'ok');
     };
+
+    const unhide = (fn) => {
+      fn();
+      Lib.applyHidden();
+      UI.renderHidden();
+      if (document.documentElement.classList.contains('is-android')) TvNav.focus($('#hiddenList [data-unhide]') || $('#clearHistoryBtn'));
+    };
+    U.on($('#hiddenList'), 'click', '[data-unhide]', (_e, el) => unhide(() => Store.unhide(el.dataset.unhide)));
+    $('#unhideAllBtn').onclick = () => unhide(() => Store.unhideAll());
 
     $('#clearHistoryBtn').onclick = () => {
       if (!confirm('Apagar todo o histórico e o "Continuar assistindo"?')) return;
