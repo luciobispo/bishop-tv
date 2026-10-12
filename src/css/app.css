@@ -405,6 +405,35 @@ select.mini-input option { background: #1a1a22; }
 }
 .chip:hover { color: #fff; background: rgba(255,255,255,.12); }
 .chip.active { background: #fff; border-color: #fff; color: #0b0b0f; font-weight: 640; }
+.chip-num { opacity: .6; font-variant-numeric: tabular-nums; }
+.chip.chip-zero:not(.active) { opacity: .45; }
+.chip-ghost { background: none; }
+
+.search-recent { display: flex; align-items: center; gap: 10px; margin: -8px 0 22px; flex-wrap: wrap; }
+.search-recent-label { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--txt-faint); }
+.search-recent-list { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.empty-title { font-size: 18px; font-weight: 650; color: var(--txt); margin-bottom: 14px; }
+.empty-hints { display: inline-block; text-align: left; line-height: 1.7; padding-left: 20px; }
+
+/* Teclado da tela (controle remoto): só no Android/TV */
+.osk { display: none; }
+.is-android .search-layout { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 36px; align-items: start; }
+.is-android .osk {
+  display: block; position: sticky; top: calc(var(--topbar-h) + 8px);
+  background: rgba(0,0,0,.35); border: 1px solid var(--line-soft); border-radius: var(--radius-lg); padding: 14px;
+}
+.osk-keys, .osk-actions { display: grid; grid-template-columns: repeat(6, 48px); gap: 6px; }
+.osk-actions { margin-top: 6px; }
+.osk-actions .osk-key { grid-column: span 2; }
+.osk-key {
+  height: 48px; display: grid; place-items: center; border-radius: var(--radius);
+  background: rgba(255,255,255,.06); border: 0; color: var(--txt); font-size: 17px; font-weight: 600; cursor: pointer;
+  transition: background .12s, color .12s, transform .12s;
+}
+.osk-key svg { width: 22px; height: 22px; fill: currentColor; }
+.osk-actions .osk-key { font-size: 13px; }
+.is-android .osk-key:focus { background: #fff; color: #0b0b0f; transform: scale(1.08); box-shadow: none; }
 
 /* ======================= FONTES ======================= */
 .source-add { background: var(--bg-elev); border: 1px solid var(--line-soft); border-radius: var(--radius-lg); padding: 22px; }

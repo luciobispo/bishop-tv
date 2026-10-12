@@ -329,38 +329,56 @@ const Lib = {
   /* ------------------------------------------------------------------
    * Busca
    * ------------------------------------------------------------------ */
+  /**
+   * Varre os três catálogos sempre, para as abas mostrarem quantos resultados
+   * cada tipo tem; só guarda os itens do tipo pedido. Uma palavra só, sem
+   * espaço, também casa com as iniciais ("bbb" → "Big Brother Brasil") —
+   * digitar no teclado da tela com o controle é lento.
+   * Retorna { items, counts: { all, live, movie, series } }.
+   */
   search(query, type, limit) {
+    const counts = { all: 0, live: 0, movie: 0, series: 0 };
     const q = U.norm(query);
-    if (!q) return [];
+    if (!q) return { items: [], counts };
     const terms = q.split(' ').filter(Boolean);
+    const byInitials = terms.length === 1 && q.length >= 2;
     const max = limit || 300;
-
-    const pools = type && type !== 'all'
-      ? [this.listOf(type)]
-      : [this.series, this.movies, this.live];
+    const want = type && type !== 'all' ? type : null;
 
     const hits = [];
-    for (const pool of pools) {
+    for (const [kind, pool] of [['series', this.series], ['movie', this.movies], ['live', this.live]]) {
+      const keep = !want || want === kind;
+      let kept = 0;
       for (let i = 0; i < pool.length; i++) {
         const it = pool[i];
         const n = it._n || (it._n = U.norm(it.title || it.name));
         let ok = true;
         for (const t of terms) { if (!n.includes(t)) { ok = false; break; } }
+        let initials = false;
+        if (!ok && byInitials) {
+          const ini = it._i || (it._i = n.split(' ').map((w) => w[0]).join(''));
+          ok = initials = ini.startsWith(q);
+        }
         if (!ok) continue;
-        // Pontuação: começo do nome > palavra inteira > substring
-        let score = 0;
-        if (n.startsWith(q)) score = 3;
+        counts[kind]++;
+        // A contagem é exata; a lista para de crescer para não ordenar demais.
+        if (!keep || kept > max * 4) continue;
+        kept++;
+        // Pontuação: começo do nome > palavra inteira > iniciais > substring
+        let score;
+        if (initials) score = 1.5;
+        else if (n.startsWith(q)) score = 3;
         else if (n.includes(' ' + q)) score = 2;
         else score = 1;
         if (it.type === 'series') score += 0.4;
         else if (it.type === 'movie') score += 0.2;
         hits.push({ it, score });
-        if (hits.length > max * 4) break;
       }
     }
+    counts.all = counts.live + counts.movie + counts.series;
 
     hits.sort((a, b) => b.score - a.score || (a.it.title || '').localeCompare(b.it.title || '', 'pt-BR'));
-    return hits.slice(0, max).map((h) => h.it);
+    return { items: hits.slice(0, max).map((h) => h.it), counts };
   },
 
   /* ------------------------------------------------------------------

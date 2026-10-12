@@ -10,6 +10,7 @@ const Store = {
     favorites: {},      // { [itemKey]: {key, name, logo, type, url, group, addedAt, ...} }
     progress: {},       // { [itemKey]: {pos, dur, at, name, logo, type, url, seriesKey?, ...} }
     recent: [],         // [itemKey] mais recentes primeiro
+    searches: [],       // termos buscados, mais recentes primeiro
     // Filmes e episódios assistidos. Diferente de `progress`, não some quando o
     // item termina: é o que permite marcar "assistido" e retomar séries.
     history: {},        // { [itemKey]: {key, name, title, logo, type, url, seriesKey?, seriesName?, seriesLogo?, season?, episode?, pos, dur, at, done, sourceId} }
@@ -37,6 +38,7 @@ const Store = {
     this.data.favorites = this.data.favorites || {};
     this.data.progress = this.data.progress || {};
     this.data.recent = this.data.recent || [];
+    this.data.searches = this.data.searches || [];
     if (!saved || !saved.history) this._seedHistory();
     return this.data;
   },
@@ -201,6 +203,20 @@ const Store = {
       sourceId: this.data.activeSource
     };
     this.data.recent = [entry, ...this.data.recent.filter((r) => r.key !== item.key)].slice(0, 30);
+    this.save();
+  },
+
+  /* ---------------- buscas recentes ---------------- */
+  pushSearch(query) {
+    const q = String(query || '').trim();
+    if (q.length < 2) return;
+    const n = U.norm(q);
+    this.data.searches = [q, ...this.data.searches.filter((s) => U.norm(s) !== n)].slice(0, 12);
+    this.save();
+  },
+
+  clearSearches() {
+    this.data.searches = [];
     this.save();
   },
 

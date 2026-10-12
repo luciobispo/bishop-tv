@@ -419,21 +419,53 @@ const UI = {
     const input = $('#searchInput');
     if (input.value !== q) input.value = q;
     const empty = $('#searchEmpty');
-    const show = (msg) => {
+    const tabs = $('#searchTabs');
+    const show = (html) => {
       $('#searchGrid').innerHTML = '';
-      empty.textContent = msg;
+      empty.innerHTML = html;
       empty.classList.remove('hidden');
     };
+    this.renderRecentSearches(q);
 
+    // Sem termo: buscas populares no lugar dos resultados.
     if (q.trim().length < 2) {
-      $('#searchTitle').textContent = 'Buscar';
-      return show('Digite pelo menos duas letras para buscar.');
+      tabs.classList.add('hidden');
+      const top = Lib.topRanked(20);
+      if (!top) {
+        $('#searchTitle').textContent = 'Buscar';
+        return show('Digite pelo menos duas letras para buscar.');
+      }
+      $('#searchTitle').textContent = `Populares · ${top.title}`;
+      empty.classList.add('hidden');
+      return this.renderGrid($('#searchGrid'), top.items, 'poster');
     }
+
     $('#searchTitle').textContent = `Resultados para “${q}”`;
-    const results = Lib.search(q, this.state.searchType, 400);
-    if (!results.length) return show('Nenhum resultado encontrado.');
+    const { items, counts } = Lib.search(q, this.state.searchType, 400);
+    tabs.classList.remove('hidden');
+    for (const chip of $$('.chip', tabs)) {
+      const n = counts[chip.dataset.stype] || 0;
+      chip.querySelector('.chip-num').textContent = n ? ` ${n > 999 ? '999+' : n}` : '';
+      chip.classList.toggle('chip-zero', !n);
+    }
+
+    if (!items.length) {
+      const other = counts.all
+        ? '<li>Há resultados em outra aba — veja os números acima.</li>'
+        : '<li>Digite só o começo do nome, sem o ano ou a qualidade (HD, 4K).</li>' +
+          '<li>Ou use as iniciais: “bbb” encontra “Big Brother Brasil”.</li>';
+      return show(`<div class="empty-title">Nenhum resultado</div><ol class="empty-hints">${other}</ol>`);
+    }
     empty.classList.add('hidden');
-    this.renderGrid($('#searchGrid'), results, 'poster');
+    this.renderGrid($('#searchGrid'), items, 'poster');
+  },
+
+  renderRecentSearches(q) {
+    const list = Store.data.searches || [];
+    const wrap = $('#searchRecent');
+    wrap.classList.toggle('hidden', !list.length || q.trim().length >= 2);
+    $('#searchRecentList').innerHTML = list
+      .map((s) => `<button class="chip" data-q="${U.esc(s)}">${U.esc(s)}</button>`).join('');
   },
 
   /* ================================================================

@@ -224,18 +224,48 @@ const App = {
    * ================================================================ */
   openSearch() {
     UI.nav('search');
-    // Na TV o foco fica no menu: o teclado só abre quando o usuário escolhe o
-    // campo (ver tvnav.js).
-    if (!document.documentElement.classList.contains('is-android')) $('#searchInput').focus();
+    // Na TV o foco vai para o teclado da tela; o da TV só abre se o usuário
+    // escolher o campo (ver tvnav.js).
+    if (document.documentElement.classList.contains('is-android')) TvNav.focus($('#oskKeys .osk-key'));
+    else $('#searchInput').focus();
   },
 
   bindSearch() {
-    $('#searchInput').addEventListener('input', U.debounce((e) => UI.doSearch(e.target.value), 260));
+    const input = $('#searchInput');
+    const run = U.debounce((v) => UI.doSearch(v), 260);
+    input.addEventListener('input', () => run(input.value));
     U.on($('#searchTabs'), 'click', '.chip', (_e, el) => {
       $$('#searchTabs .chip').forEach((c) => c.classList.toggle('active', c === el));
       UI.state.searchType = el.dataset.stype;
       UI.doSearch(UI.state.searchQuery);
     });
+
+    // Teclado da tela: A–Z e 0–9 em seis colunas, como nos apps de IPTV para
+    // TV — com o controle, andar por ele é mais rápido que pelo teclado da TV.
+    $('#oskKeys').innerHTML = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'.split('')
+      .map((ch) => `<button class="osk-key" data-osk="${ch.toLowerCase()}">${ch}</button>`).join('');
+    U.on($('#osk'), 'click', '.osk-key', (_e, el) => {
+      const k = el.dataset.osk, v = input.value;
+      if (k === 'back') input.value = v.slice(0, -1);
+      else if (k === 'clear') input.value = '';
+      else if (k === 'space') { if (v && !v.endsWith(' ')) input.value = v + ' '; }
+      else input.value = v + k;
+      run(input.value);
+    });
+
+    // Buscas recentes: o termo entra na lista quando um resultado é aberto.
+    U.on($('#searchRecentList'), 'click', '.chip', (_e, el) => {
+      UI.doSearch(el.dataset.q);
+      if (document.documentElement.classList.contains('is-android')) TvNav.focus($('#searchGrid .card'));
+    });
+    $('#searchRecentClear').onclick = () => {
+      Store.clearSearches();
+      UI.renderRecentSearches(UI.state.searchQuery || '');
+      if (document.documentElement.classList.contains('is-android')) TvNav.focus($('#oskKeys .osk-key'));
+    };
+    $('#searchGrid').addEventListener('click', (e) => {
+      if (e.target.closest('.card')) Store.pushSearch(UI.state.searchQuery);
+    }, true);
   },
 
   /* ================================================================
