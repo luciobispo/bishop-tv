@@ -24,6 +24,16 @@ const U = {
       .trim();
   },
 
+  /**
+   * Capas do TMDB (a maioria nos painéis) no tamanho certo para a tela. Os
+   * painéis gravam "original" ou w600 e o WebView guarda cada imagem
+   * descomprimida: um pôster original passa de 20 MB — o que mais pesa no
+   * Firestick. `size`: w185/w342/w500 para pôsteres, w780/w1280 para fundos.
+   */
+  img(url, size) {
+    return String(url || '').replace(/(image\.tmdb\.org\/t\/p\/)[^/]+\//i, `$1${size}/`);
+  },
+
   // Remove prefixos de qualidade/país comuns nas listas: "FHD| ", "[4K] ", "BR: "
   cleanName(s) {
     let n = String(s || '').trim();

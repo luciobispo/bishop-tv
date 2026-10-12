@@ -23,29 +23,59 @@ const Lib = {
     return 'src-' + src.id;
   },
 
+  // Android (Firestick): não cabem dois catálogos na memória ao mesmo tempo.
+  get lowMemory() { return window.bishop.platform === 'android'; },
+
   async load(src, { force = false, onProgress } = {}) {
     const report = (m) => { if (onProgress) onProgress(m); };
+    const prev = this.source;
     this.source = src;
+    const STALE_MS = 12 * 3600 * 1000;
+    let hasCache = false;
 
     if (!force) {
-      const cached = await window.bishop.cache.read(this.cacheKey(src));
+      let cached = await window.bishop.cache.read(this.cacheKey(src));
       if (cached && cached.ok && cached.data && Array.isArray(cached.data.items) && cached.data.items.length) {
-        const age = Date.now() - (cached.data.at || 0);
-        report('Lendo cache…');
-        await this.index(cached.data.items, onProgress);
-        this.loadedAt = cached.data.at || Date.now();
-        // Atualiza em segundo plano se o cache tiver mais de 12h.
-        if (age > 12 * 3600 * 1000) this._refreshLater(src);
-        return { fromCache: true };
+        hasCache = true;
+        const stale = Date.now() - (cached.data.at || 0) > STALE_MS;
+        // Com pouca memória, cache velho é baixado de novo agora, em vez de em
+        // segundo plano com o catálogo antigo carregado (ver _refreshLater).
+        if (!stale || !this.lowMemory) {
+          report('Lendo cache…');
+          await this.index(cached.data.items, onProgress);
+          this.loadedAt = cached.data.at || Date.now();
+          if (stale) this._refreshLater(src);
+          return { fromCache: true };
+        }
       }
+      cached = null;
     }
 
-    const items = await this.fetchSource(src, report);
-    if (!items.length) throw new Error('A lista foi carregada, mas não contém nenhum canal válido.');
+    // Solta o catálogo atual antes de baixar outro (troca ou atualização de lista).
+    this.reset();
+    let items;
+    try {
+      items = await this.fetchSource(src, report);
+      if (!items.length) throw new Error('A lista foi carregada, mas não contém nenhum canal válido.');
+    } catch (err) {
+      // Volta ao que havia antes: a cópia salva desta lista ou a lista anterior.
+      if (await this._loadCache(src, onProgress)) {
+        // Cache vencido sem rede: segue com a cópia salva, como no desktop.
+        if (hasCache) {
+          U.toast('Não foi possível atualizar a lista; usando a cópia salva.', 'warn');
+          return { fromCache: true };
+        }
+      } else if (prev && prev !== src && await this._loadCache(prev)) {
+        this.source = prev;
+      }
+      throw err;
+    }
 
-    await this.index(items, onProgress);
+    // Grava antes de indexar: o index() acrescenta campos derivados (_n) que
+    // só inchariam o cache — e a cópia que o IndexedDB faz dele.
     this.loadedAt = Date.now();
     await window.bishop.cache.write(this.cacheKey(src), { at: this.loadedAt, items });
+    await this.index(items, onProgress);
 
     src.lastSync = this.loadedAt;
     src.count = items.length;
@@ -53,6 +83,28 @@ const Lib = {
     return { fromCache: false };
   },
 
+  async _loadCache(src, onProgress) {
+    const cached = await window.bishop.cache.read(this.cacheKey(src));
+    if (!(cached && cached.ok && cached.data && Array.isArray(cached.data.items) && cached.data.items.length)) {
+      return false;
+    }
+    await this.index(cached.data.items, onProgress);
+    this.loadedAt = cached.data.at || Date.now();
+    return true;
+  },
+
+  /** Esvazia o catálogo em memória. */
+  reset() {
+    this.all = [];
+    this.live = [];
+    this.movies = [];
+    this.series = [];
+    this.cats = { live: [], movie: [], series: [] };
+    this.byKey = new Map();
+    this.seriesByKey = new Map();
+  },
+
+  /** Só no desktop: baixa a lista nova enquanto a antiga continua em uso. */
   _refreshLater(src) {
     setTimeout(async () => {
       try {
@@ -95,16 +147,8 @@ const Lib = {
     }
 
     report('Interpretando a lista…');
-    const { items, playlistAttrs } = M3U.parse(text);
-    this._keepTvgUrl(src, playlistAttrs);
+    const { items } = M3U.parse(text);
     return items;
-  },
-
-  /** Endereço do guia declarado no cabeçalho da M3U (pode vir mais de um, separados por vírgula). */
-  _keepTvgUrl(src, attrs) {
-    const raw = (attrs && (attrs['url-tvg'] || attrs['x-tvg-url'])) || '';
-    const url = raw.split(',').map((s) => s.trim()).find((s) => /^https?:\/\//i.test(s)) || '';
-    if (url) src.tvgUrl = url; else delete src.tvgUrl;
   },
 
   looksLikeM3U(text) {
@@ -128,8 +172,7 @@ const Lib = {
     if (!this.looksLikeM3U(head)) {
       throw new Error('O conteúdo não parece ser uma lista M3U válida.');
     }
-    const { items, playlistAttrs } = parser.end();
-    this._keepTvgUrl(src, playlistAttrs);
+    const { items } = parser.end();
     return items;
   },
 
@@ -197,8 +240,9 @@ const Lib = {
       }
     }
     const usable = (logo) => !!logo && logoUse.get(logo) <= SHARED_MAX;
+    this._usableLogo = usable;
 
-    // Ordena episódios e monta as temporadas
+    // Ordena episódios; as temporadas só são montadas ao abrir a série (seasonsOf).
     this.series = Array.from(seriesAgg.values());
     for (const s of this.series) {
       this.seriesByKey.set(s.seriesKey, s);
@@ -209,23 +253,6 @@ const Lib = {
       const cover = s.episodes.find((ep) => ep.logo && logoUse.get(ep.logo) === 1)
         || s.episodes.find((ep) => usable(ep.logo));
       s.logo = cover ? cover.logo : '';
-      s.seasons = {};
-      for (const ep of s.episodes) {
-        const sn = String(ep.season || 1);
-        (s.seasons[sn] = s.seasons[sn] || []).push({
-          key: ep.key,
-          id: ep.key,
-          season: ep.season || 1,
-          episode: ep.episode || 0,
-          name: ep.epTitle || `Episódio ${ep.episode || ''}`.trim(),
-          title: ep.epTitle || `Episódio ${ep.episode || ''}`.trim(),
-          url: ep.url,
-          thumb: usable(ep.logo) ? ep.logo : '',
-          plot: '',
-          duration: '',
-          type: 'episode'
-        });
-      }
       s.epCount = s.episodes.length;
     }
 
@@ -238,6 +265,33 @@ const Lib = {
     if (onProgress) {
       onProgress(`${this.live.length} canais · ${this.movies.length} filmes · ${this.series.length} séries`);
     }
+  },
+
+  /**
+   * Temporadas de uma série vinda de .m3u. Montadas sob demanda: feitas para
+   * todas no carregamento, cada episódio da lista existiria em dobro na memória.
+   */
+  seasonsOf(s) {
+    if (s.seasons || !s.episodes) return s.seasons || null;
+    const usable = this._usableLogo || (() => false);
+    const seasons = {};
+    for (const ep of s.episodes) {
+      const sn = String(ep.season || 1);
+      (seasons[sn] = seasons[sn] || []).push({
+        key: ep.key,
+        id: ep.key,
+        season: ep.season || 1,
+        episode: ep.episode || 0,
+        name: ep.epTitle || `Episódio ${ep.episode || ''}`.trim(),
+        title: ep.epTitle || `Episódio ${ep.episode || ''}`.trim(),
+        url: ep.url,
+        thumb: usable(ep.logo) ? ep.logo : '',
+        plot: '',
+        duration: '',
+        type: 'episode'
+      });
+    }
+    return seasons;
   },
 
   _cats(list) {

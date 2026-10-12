@@ -8,7 +8,6 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 
 import java.io.File;
 import java.io.FileOutputStream;
-import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.UUID;
@@ -89,7 +88,9 @@ public class NativeHttpPlugin extends Plugin {
                     ret.put("size", out.length());
                 }
                 call.resolve(ret);
-            } catch (IOException e) {
+            } catch (Exception e) {
+                // Não só IOException: um erro de execução nesta thread do pool
+                // não teria quem o capturasse e derrubaria o app inteiro.
                 out.delete();
                 call.reject(e.getClass().getSimpleName() + ": " + e.getMessage());
             }

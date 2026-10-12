@@ -13,18 +13,9 @@ import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
 import android.widget.ImageButton;
-import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import org.json.JSONArray;
-import org.json.JSONException;
-import org.json.JSONObject;
-
-import java.text.SimpleDateFormat;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.List;
 import java.util.Locale;
 
 import androidx.activity.OnBackPressedCallback;
@@ -70,8 +61,6 @@ public class PlayerActivity extends AppCompatActivity {
     static final String EXTRA_BUFFER = "buffer";
     static final String EXTRA_CAN_FAVORITE = "canFavorite";
     static final String EXTRA_FAVORITE = "favorite";
-    static final String EXTRA_EPG = "epg";
-
     static final String RESULT_POSITION_MS = "positionMs";
     static final String RESULT_DURATION_MS = "durationMs";
     static final String RESULT_ENDED = "ended";
@@ -98,24 +87,13 @@ public class PlayerActivity extends AppCompatActivity {
     private boolean ended = false;
     private String error = null;
     private boolean finishing = false;
+    private boolean stoppedInBackground = false;
     private boolean canFavorite;
     private boolean favorite;
     private ImageButton favButton;
     private TextView osd;
     private final Runnable hideOsd = () -> osd.animate().alpha(0f).setDuration(250)
         .withEndAction(() -> osd.setVisibility(View.GONE));
-
-    /** Programação do canal ao vivo, em ordem: {início, fim} em ms e o título. */
-    private final List<long[]> epgTimes = new ArrayList<>();
-    private final List<String> epgTitles = new ArrayList<>();
-    private static final long EPG_TICK_MS = 15000;
-    private final Runnable epgTick = new Runnable() {
-        @Override
-        public void run() {
-            renderEpg();
-            playerView.postDelayed(this, EPG_TICK_MS);
-        }
-    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -135,7 +113,6 @@ public class PlayerActivity extends AppCompatActivity {
         canFavorite = in.getBooleanExtra(EXTRA_CAN_FAVORITE, false);
         favorite = in.getBooleanExtra(EXTRA_FAVORITE, false);
         long startMs = in.getLongExtra(EXTRA_START_MS, 0L);
-        parseEpg(in.getStringExtra(EXTRA_EPG));
 
         setContentView(buildLayout(in.getStringExtra(EXTRA_TITLE), in.getStringExtra(EXTRA_SUBTITLE)));
         hideSystemBars();
@@ -219,9 +196,8 @@ public class PlayerActivity extends AppCompatActivity {
             playerView.setShowRewindButton(false);
             playerView.setShowFastForwardButton(false);
             playerView.findViewById(R.id.bishop_timeline).setVisibility(View.GONE);
-            // No lugar dela: selo AO VIVO e o programa no ar.
+            // Ao vivo não tem linha do tempo.
             playerView.findViewById(R.id.bishop_live).setVisibility(View.VISIBLE);
-            epgTick.run();
         }
 
         // Aviso do salto (⏪/⏩ e setas), visível mesmo com o controle escondido.
@@ -240,63 +216,6 @@ public class PlayerActivity extends AppCompatActivity {
     }
 
     /* ------------------------------------------------------------------ */
-
-    private void parseEpg(String json) {
-        if (TextUtils.isEmpty(json)) return;
-        try {
-            JSONArray arr = new JSONArray(json);
-            for (int i = 0; i < arr.length(); i++) {
-                JSONObject p = arr.getJSONObject(i);
-                long start = p.optLong("start"), stop = p.optLong("stop");
-                if (stop <= start) continue;
-                epgTimes.add(new long[] { start, stop });
-                epgTitles.add(p.optString("title", ""));
-            }
-        } catch (JSONException e) {
-            epgTimes.clear();
-            epgTitles.clear();
-        }
-    }
-
-    /** Programa no ar, horários, quanto já passou e o próximo; some o que não houver. */
-    private void renderEpg() {
-        long now = System.currentTimeMillis();
-        int cur = -1, next = -1;
-        for (int i = 0; i < epgTimes.size(); i++) {
-            long[] t = epgTimes.get(i);
-            if (t[1] <= now) continue;
-            if (t[0] <= now && cur == -1) cur = i;
-            else { next = i; break; }
-        }
-
-        TextView title = playerView.findViewById(R.id.bishop_epg_now);
-        View bar = playerView.findViewById(R.id.bishop_epg_bar);
-        TextView nextView = playerView.findViewById(R.id.bishop_epg_next);
-
-        if (cur >= 0) {
-            long[] t = epgTimes.get(cur);
-            title.setText(epgTitles.get(cur));
-            ((TextView) playerView.findViewById(R.id.bishop_epg_start)).setText(hhmm(t[0]));
-            ((TextView) playerView.findViewById(R.id.bishop_epg_end)).setText(hhmm(t[1]));
-            ((ProgressBar) playerView.findViewById(R.id.bishop_epg_progress))
-                .setProgress((int) (1000 * (now - t[0]) / Math.max(1, t[1] - t[0])));
-            bar.setVisibility(View.VISIBLE);
-        } else {
-            title.setText("");
-            bar.setVisibility(View.GONE);
-        }
-
-        if (next >= 0) {
-            nextView.setText("A seguir: " + hhmm(epgTimes.get(next)[0]) + "  " + epgTitles.get(next));
-            nextView.setVisibility(View.VISIBLE);
-        } else {
-            nextView.setVisibility(View.GONE);
-        }
-    }
-
-    private static String hhmm(long ms) {
-        return new SimpleDateFormat("HH:mm", Locale.getDefault()).format(new Date(ms));
-    }
 
     /* ------------------------------------------------------------------ */
 
@@ -425,6 +344,10 @@ public class PlayerActivity extends AppCompatActivity {
                 maxMs = 50000;
                 maxMb = 64;
         }
+        // Nunca mais que 1/4 do heap: com o resto do app e o decodificador, um
+        // buffer maior estoura a memória nos Firesticks de heap menor.
+        long heapMb = Runtime.getRuntime().maxMemory() / (1024 * 1024);
+        maxMb = (int) Math.max(16, Math.min(maxMb, heapMb / 4));
         return new DefaultLoadControl.Builder()
             // min == max: continua baixando sem parar enquanto houver espaço.
             .setBufferDurationsMs(maxMs, maxMs, startMs, rebufferMs)
@@ -579,16 +502,38 @@ public class PlayerActivity extends AppCompatActivity {
         return Math.round(TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v, getResources().getDisplayMetrics()));
     }
 
+    /**
+     * Em segundo plano (botão Home), o buffer — dezenas de MB — é liberado:
+     * um app parado ocupando essa memória é o primeiro que o Android mata.
+     * Ao voltar, o filme recarrega na mesma posição (pausado, como antes) e
+     * o ao vivo volta direto para a borda, tocando.
+     */
+    @Override
+    protected void onStart() {
+        super.onStart();
+        if (player == null || !stoppedInBackground) return;
+        stoppedInBackground = false;
+        if (live) {
+            player.seekToDefaultPosition();
+            player.setPlayWhenReady(true);
+        }
+        player.prepare();
+    }
+
     @Override
     protected void onStop() {
         super.onStop();
-        if (player != null && !finishing) player.pause();
+        if (player != null && !finishing) {
+            player.setPlayWhenReady(false);
+            player.stop();
+            stoppedInBackground = true;
+        }
     }
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        if (playerView != null) playerView.removeCallbacks(epgTick);
+        if (osd != null) osd.removeCallbacks(hideOsd);
         if (player != null) {
             player.release();
             player = null;

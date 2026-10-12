@@ -86,9 +86,7 @@ const Player = {
     $('#plTitle').textContent = item.title || item.name || '';
     $('#plSub').textContent = opts.subtitle || this.subtitleFor(item);
     this.applyAspectRatio();
-    // Ao vivo não tem linha do tempo: no lugar dela entra o programa no ar.
     $('#plSeek').classList.toggle('hidden', this.isLive);
-    this.renderEpg();
     $('#plSep').classList.toggle('hidden', this.isLive);
     $('#plDur').classList.toggle('hidden', this.isLive);
     $$('.vod-only').forEach((b) => b.classList.toggle('hidden', this.isLive));
@@ -112,6 +110,7 @@ const Player = {
     // Canais e filmes ganham o coração no player; o ExoPlayer devolve o estado final.
     const canFav = item.type === 'live' || item.type === 'movie';
     let res = {};
+    if (typeof UI !== 'undefined') UI.parkImages();
     try {
       res = await window.bishop.nativePlayer.play({
         ...this.nativeUrls(item),
@@ -119,7 +118,6 @@ const Player = {
         buffer: Store.get('buffer') || 'normal',
         title: item.title || item.name || '',
         subtitle: opts.subtitle || this.subtitleFor(item),
-        ...(this.isLive ? { epg: EPG.upcoming(item).map((p) => ({ title: p.title, start: p.start, stop: p.stop })) } : {}),
         userAgent: Store.get('userAgent') || '',
         aspectRatio: Store.get('aspectRatio') || 'fit',
         startMs: Math.round((opts.resumeAt || 0) * 1000),
@@ -128,6 +126,7 @@ const Player = {
     } catch (err) {
       res = { error: String((err && err.message) || err) };
     }
+    if (typeof UI !== 'undefined') UI.unparkImages();
 
     if (['4:3', '16:9', 'fit'].includes(res.aspectRatio)) {
       this.aspectRatio = res.aspectRatio;
@@ -161,23 +160,6 @@ const Player = {
     else if (/\/live\/.+\.m3u8(\?|$)/i.test(u)) ts = u.replace(/\.m3u8(\?|$)/i, '.ts$1');
     else if (/\/m3u8(\?|$)/i.test(u)) ts = u.replace(/\/m3u8(\?|$)/i, '/ts$1');
     return ts && ts !== u ? { url: ts, fallbackUrl: u } : { url: u };
-  },
-
-  /** Bloco "AO VIVO" do player: programa no ar, horários, progresso e o próximo. */
-  renderEpg() {
-    $('#plEpg').classList.toggle('hidden', !this.isLive);
-    if (!this.isLive || !this.item) return;
-    const nn = EPG.nowNext(this.item);
-    const now = nn && nn.now;
-    const next = nn && nn.next;
-    $('#plEpgNow').textContent = now ? now.title : '';
-    $('#plEpgBar').classList.toggle('hidden', !now);
-    if (now) {
-      $('#plEpgStart').textContent = EPG.hhmm(now.start);
-      $('#plEpgEnd').textContent = EPG.hhmm(now.stop);
-      $('#plEpgFill').style.width = (EPG.progress(now) * 100).toFixed(1) + '%';
-    }
-    $('#plEpgNext').textContent = next ? `A seguir: ${EPG.hhmm(next.start)} ${next.title}` : '';
   },
 
   subtitleFor(item) {
@@ -594,8 +576,7 @@ const Player = {
       if (q && !(it._n || U.norm(it.title || it.name)).includes(q)) continue;
       const b = U.el('button', 'zap-item' + (this.item && it.key === this.item.key ? ' active' : ''));
       b.dataset.idx = i;
-      const nn = EPG.nowNext(it);
-      const info = nn && nn.now ? `${EPG.hhmm(nn.now.start)} ${nn.now.title}` : (it.group || '');
+      const info = it.group || '';
       b.innerHTML =
         (it.logo ? `<img src="${U.esc(it.logo)}" loading="lazy" onerror="this.style.visibility='hidden'">`
                  : `<span style="width:44px"></span>`) +
@@ -617,7 +598,6 @@ const Player = {
     this.stopProgressTimer();
     this.progressTimer = setInterval(() => {
       this.saveProgress();
-      if (this.isLive) this.renderEpg();  // acompanha a troca de programa
     }, 8000);
   },
 

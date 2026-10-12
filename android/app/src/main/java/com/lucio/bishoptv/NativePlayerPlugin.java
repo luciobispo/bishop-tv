@@ -4,7 +4,6 @@ import android.content.Intent;
 
 import androidx.activity.result.ActivityResult;
 
-import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
@@ -42,9 +41,6 @@ public class NativePlayerPlugin extends Plugin {
         intent.putExtra(PlayerActivity.EXTRA_LIVE, call.getBoolean("live", false));
         intent.putExtra(PlayerActivity.EXTRA_FALLBACK_URL, call.getString("fallbackUrl"));
         intent.putExtra(PlayerActivity.EXTRA_BUFFER, call.getString("buffer", "normal"));
-        // Ao vivo: programação do canal (EPG) a partir de agora, [{title, start, stop}] em ms.
-        JSArray epg = call.getArray("epg");
-        if (epg != null) intent.putExtra(PlayerActivity.EXTRA_EPG, epg.toString());
         // Só itens que podem ir para a Minha Lista mandam "favorite"; os outros ficam sem o coração.
         if (call.getData().has("favorite")) {
             intent.putExtra(PlayerActivity.EXTRA_CAN_FAVORITE, true);

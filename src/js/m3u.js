@@ -141,7 +141,6 @@ const M3U = {
 
     out.logo = out.attrs['tvg-logo'] || out.attrs['logo'] || '';
     out.group = out.attrs['group-title'] || '';
-    out.tvgId = out.attrs['tvg-id'] || '';
     out.tvgName = out.attrs['tvg-name'] || '';
     out.chno = out.attrs['tvg-chno'] || out.attrs['channel-number'] || '';
     if (!out.name) out.name = out.tvgName || 'Sem nome';
@@ -172,7 +171,6 @@ const M3U = {
       group: group || (type === 'live' ? 'Sem categoria' : 'Diversos'),
       url,
       type,
-      tvgId: it.tvgId || '',
       chno: it.chno || '',
       userAgent: it.userAgent || '',
       referer: it.referer || '',

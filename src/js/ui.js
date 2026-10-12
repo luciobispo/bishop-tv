@@ -15,6 +15,7 @@ const UI = {
   detailItem: null,
   detailSeasons: null,
   pagers: {},
+  _imgIOs: new Map(),   // grade → observador que solta/recarrega as capas
 
   /* ================================================================
    * Navegação
@@ -27,6 +28,7 @@ const UI = {
 
     $$('.rail-item').forEach((b) => b.classList.toggle('active', b.dataset.nav === view));
     $('#app').scrollTop = 0;
+    this._releaseHidden(view);
 
     switch (view) {
       case 'home':     this.renderHome(); break;
@@ -37,6 +39,52 @@ const UI = {
       case 'search':   this.renderSearch(); break;
       case 'sources':  this.renderSources(); break;
       case 'settings': this.renderSettings(); break;
+    }
+  },
+
+  /**
+   * Telas escondidas ficam vazias — cada uma é redesenhada ao voltar (ver
+   * nav). No Firestick, os cartões e capas de uma grade já rolada até o fim
+   * continuariam ocupando a memória do WebView em segundo plano.
+   */
+  _releaseHidden(view) {
+    const hosts = {
+      home: '#homeRows', mylist: '#mylistRows', live: '#liveGrid',
+      movies: '#movieGrid', series: '#seriesGrid', search: '#searchGrid'
+    };
+    for (const [v, sel] of Object.entries(hosts)) {
+      const host = $(sel);
+      if (v === view || !host || !host.firstChild) continue;
+      const io = this._imgIOs.get(host);
+      if (io) io.disconnect();
+      host.innerHTML = '';
+    }
+    if (view !== 'home') $('#heroBg').style.backgroundImage = '';
+  },
+
+  /**
+   * Android: com o ExoPlayer na frente, a interface solta as imagens que tem
+   * na tela. O vídeo, o buffer e o decodificador precisam dessa memória — sem
+   * ela o Android mata o app no meio do filme.
+   */
+  parkImages() {
+    for (const img of $$('.card-img[src], .ep-thumb[src]')) {
+      img.dataset.parked = img.getAttribute('src');
+      img.removeAttribute('src');
+    }
+    for (const el of [$('#heroBg'), $('#detailBg')]) {
+      const bg = el && el.style.backgroundImage;
+      if (!bg || bg === 'none') continue;
+      el.dataset.parked = bg;
+      el.style.backgroundImage = 'none';
+    }
+  },
+
+  unparkImages() {
+    for (const el of $$('[data-parked]')) {
+      if (el.tagName === 'IMG') el.setAttribute('src', el.dataset.parked);
+      else el.style.backgroundImage = el.dataset.parked;
+      delete el.dataset.parked;
     }
   },
 
@@ -53,7 +101,7 @@ const UI = {
     const isFav = Store.isFav(favKey);
 
     let sub = '';
-    if (item.type === 'live') sub = U.esc(this.liveSub(item));
+    if (item.type === 'live') sub = U.esc(item.group || '');
     else if (item.type === 'series') sub = item.epCount ? `${item.epCount} episódios` : (item.year || '');
     else sub = [item.year, item.rating ? '★ ' + Number(item.rating).toFixed(1) : ''].filter(Boolean).join(' · ');
     if (item._sub) sub = U.esc(item._sub);
@@ -70,8 +118,12 @@ const UI = {
     }
 
     // O fallback fica sempre no fundo; a capa é removida se não carregar.
-    const art = `<div class="card-fallback">${title}</div>` + (item.logo
-      ? `<img class="card-img" src="${U.esc(item.logo)}" loading="lazy" alt="" onerror="this.remove()">`
+    // Se a capa reduzida não existir, tenta uma vez a original (data-full).
+    const thumb = item.logo ? U.img(item.logo, 'w342') : '';
+    const full = thumb !== item.logo ? ` data-full="${U.esc(item.logo)}"` : '';
+    const art = `<div class="card-fallback">${title}</div>` + (thumb
+      // Sem src é uma capa solta de propósito (ver _trackImages), não um erro.
+      ? `<img class="card-img" src="${U.esc(thumb)}"${full} loading="lazy" decoding="async" alt="" onload="UI.imgLoad(this)" onerror="UI.imgError(this)">`
       : '');
 
     return `
@@ -82,7 +134,6 @@ const UI = {
           <svg viewBox="0 0 24 24"><path d="${U.heartPath(isFav)}"/></svg>
         </button>
         ${progress}
-        ${item.type === 'live' ? this.epgHTML(item) : ''}
         <div class="card-hover">
           <div class="card-name">${title}</div>
           ${sub ? `<div class="card-sub">${sub}</div>` : ''}
@@ -90,40 +141,32 @@ const UI = {
       </div>`;
   },
 
-  /* ================================================================
-   * EPG nos cards de canal
-   * ================================================================ */
-  liveSub(item) {
-    const nn = EPG.nowNext(item);
-    return nn && nn.now ? 'Agora: ' + nn.now.title : (item.group || '');
-  },
-
-  /** Faixa com o programa no ar e quanto dele já passou. */
-  epgHTML(item) {
-    const nn = EPG.nowNext(item);
-    if (!nn || !nn.now) return '';
-    return `<div class="card-epg"><span>${U.esc(nn.now.title)}</span>` +
-      `<i style="width:${(EPG.progress(nn.now) * 100).toFixed(1)}%"></i></div>`;
-  },
-
-  /** O guia chega depois da lista e os programas mudam: atualiza os cards já na tela. */
-  refreshEpg() {
-    for (const card of $$('.card[data-type="live"]')) {
-      const item = Lib.get(card.dataset.key);
-      if (!item) continue;
-      const old = card.querySelector('.card-epg');
-      if (old) old.remove();
-      const html = this.epgHTML(item);
-      if (html) card.querySelector('.card-hover').insertAdjacentHTML('beforebegin', html);
-      const sub = card.querySelector('.card-sub');
-      if (sub) sub.textContent = this.liveSub(item);
+  /**
+   * Muitas listas não têm pôster de série/novela e usam a cena de um
+   * episódio, sem o título escrito. Imagem deitada num cartão de pôster
+   * deixa o nome sempre visível, não só com o foco.
+   */
+  imgLoad(img) {
+    const card = img.parentNode;
+    if (card && card.classList.contains('card-poster') && img.naturalWidth > img.naturalHeight) {
+      card.classList.add('card-still');
     }
   },
 
-  renderEpgStatus() {
-    const st = EPG.status;
-    $('#epgStatus').textContent = st.msg || 'A programação ainda não foi carregada.';
-    $('#epgRefreshBtn').disabled = st.state === 'loading';
+  imgError(img) {
+    if (!img.getAttribute('src')) return;
+    const full = img.dataset.full;
+    if (full) {
+      delete img.dataset.full;
+      img.setAttribute('src', full);
+    } else {
+      img.remove();
+    }
+  },
+
+  /** Fundo de banner/detalhe: o backdrop em 1280 ou, sem ele, a capa em 780. */
+  backdropUrl(item) {
+    return item.backdrop ? U.img(item.backdrop, 'w1280') : U.img(item.logo, 'w780');
   },
 
   /* ================================================================
@@ -136,7 +179,7 @@ const UI = {
     const hero = Lib.heroItem();
     if (hero) {
       this.heroRef = hero;
-      const bg = hero.backdrop || hero.logo || '';
+      const bg = this.backdropUrl(hero);
       $('#heroBg').style.backgroundImage = bg ? `url("${bg}")` : 'linear-gradient(120deg,#2a1116,#12121a)';
       $('#heroTitle').textContent = hero.title || hero.name;
       const rating = Lib.rating(hero);
@@ -290,6 +333,8 @@ const UI = {
   /** Renderiza em blocos, carregando mais ao rolar. */
   renderGrid(host, items, shape) {
     const PAGE = 90;
+    const io = this._imgIOs.get(host);
+    if (io) io.disconnect();
     host.innerHTML = '';
     host.dataset.shown = '0';
 
@@ -306,9 +351,11 @@ const UI = {
       wrap.innerHTML = slice.map((it) => this.cardHTML(it, shape)).join('');
       const frag = document.createDocumentFragment();
       while (wrap.firstChild) frag.appendChild(wrap.firstChild);
+      const imgs = frag.querySelectorAll('.card-img');
       const sentinel = host.querySelector('.grid-sentinel');
       if (sentinel) sentinel.remove();
       host.appendChild(frag);
+      this._trackImages(host, imgs);
       host.dataset.shown = String(shown + slice.length);
 
       if (shown + slice.length < items.length) {
@@ -320,6 +367,32 @@ const UI = {
     };
 
     append();
+  },
+
+  /**
+   * Capas longe da tela soltam a imagem e a recarregam ao voltar. Rolando
+   * um catálogo de milhares de itens, toda capa já vista continuaria na
+   * memória do WebView — no Firestick, o que mais pesa até ele ser morto.
+   * A grade escondida (outra tela aberta) também solta todas.
+   */
+  _trackImages(host, imgs) {
+    let io = this._imgIOs.get(host);
+    if (!io) {
+      io = new IntersectionObserver((entries) => {
+        for (const e of entries) {
+          const img = e.target;
+          const src = img.getAttribute('src');
+          if (e.isIntersecting) {
+            if (!src && img.dataset.src) img.setAttribute('src', img.dataset.src);
+          } else if (src) {
+            img.dataset.src = src;
+            img.removeAttribute('src');
+          }
+        }
+      }, { root: $('#app'), rootMargin: '1500px 0px' });
+      this._imgIOs.set(host, io);
+    }
+    imgs.forEach((img) => io.observe(img));
   },
 
   _observe(node, cb) {
@@ -374,7 +447,7 @@ const UI = {
     $('#detail').classList.remove('hidden');
     $('#detailTitle').textContent = item.title || item.name;
     $('#detailBg').style.backgroundImage = (item.backdrop || item.logo)
-      ? `url("${item.backdrop || item.logo}")`
+      ? `url("${this.backdropUrl(item)}")`
       : 'linear-gradient(120deg,#2a1116,#12121a)';
     U.setHeart($('#detailFav'), Store.isFav(item.seriesKey || item.key));
     $('#detailPlot').textContent = item.plot || '';
@@ -419,7 +492,7 @@ const UI = {
 
   async loadSeasons(item) {
     const src = Store.activeSourceObj();
-    let seasons = item.seasons || null;
+    let seasons = Lib.seasonsOf(item);
 
     if (!seasons && item.xtream && src) {
       $('#detailEpisodes').classList.remove('hidden');
@@ -430,7 +503,7 @@ const UI = {
         seasons = data.seasons;
         item.seasons = seasons;
         item.plot = item.plot || data.info.plot;
-        if (data.info.backdrop) $('#detailBg').style.backgroundImage = `url("${data.info.backdrop}")`;
+        if (data.info.backdrop) $('#detailBg').style.backgroundImage = `url("${U.img(data.info.backdrop, 'w1280')}")`;
         if (data.info.plot) $('#detailPlot').textContent = data.info.plot;
         item.epCount = Object.values(seasons).reduce((n, a) => n + a.length, 0);
       } catch (e) {
@@ -496,7 +569,7 @@ const UI = {
         <div class="ep-item ${seen ? 'seen' : ''}" data-ep="${U.esc(String(ep.key))}" data-season="${U.esc(String(seasonNum))}">
           <div class="ep-num">${seen ? '✓' : (ep.episode || '')}</div>
           <div>${ep.thumb
-            ? `<img class="ep-thumb" src="${U.esc(ep.thumb)}" loading="lazy" onerror="this.style.visibility='hidden'">`
+            ? `<img class="ep-thumb" src="${U.esc(U.img(ep.thumb, 'w300'))}" loading="lazy" onerror="this.style.visibility='hidden'">`
             : '<div class="ep-thumb"></div>'}</div>
           <div style="min-width:0">
             <div class="ep-title">${U.esc(ep.title || ep.name)}${seen ? ' <span class="ep-seen">Assistido</span>' : ''}</div>
@@ -680,11 +753,6 @@ const UI = {
     $('#setBuffer').value = Store.get('buffer') || 'normal';
     $('#setResume').checked = !!Store.get('resume');
     $('#setAwake').checked = !!Store.get('keepAwake');
-    const src = Store.activeSourceObj();
-    $('#setEpgUrl').value = (src && src.epgUrl) || '';
-    $('#setEpgUrl').placeholder = src && !src.epgUrl && EPG.urlFor(src)
-      ? 'Automático (guia do provedor)' : 'http://servidor/xmltv.php?…';
-    this.renderEpgStatus();
     const info = await window.bishop.appInfo();
     $('#aboutInfo').innerHTML =
       `BishopTV v${U.esc(info.version)} · ${U.esc(info.platform || 'Electron ' + info.electron)} · Chromium ${U.esc(info.chrome)}<br>` +

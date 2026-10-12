@@ -58,6 +58,18 @@ const Xtream = {
       return m;
     };
 
+    // Solta cada objeto bruto da API logo depois de convertido: no Firestick
+    // não cabem a resposta inteira e o catálogo pronto ao mesmo tempo.
+    const drain = function* (list) {
+      if (!Array.isArray(list)) return;
+      for (let i = 0; i < list.length; i++) {
+        const s = list[i];
+        list[i] = null;
+        if (s) yield s;
+      }
+      list.length = 0;
+    };
+
     // ----- TV ao vivo -----
     report('Carregando canais ao vivo…');
     let liveCats = {}, live = [];
@@ -66,7 +78,7 @@ const Xtream = {
       live = await this.call(src, { action: 'get_live_streams' }) || [];
     } catch (e) { console.warn('[xtream] live', e); }
 
-    for (const s of live) {
+    for (const s of drain(live)) {
       const name = String(s.name || '').trim();
       items.push({
         key: 'x' + src.id + 'l' + s.stream_id,
@@ -78,7 +90,6 @@ const Xtream = {
         streamId: s.stream_id,
         url: this.liveUrl(src, s.stream_id, 'm3u8'),
         altUrl: this.liveUrl(src, s.stream_id, 'ts'),
-        tvgId: s.epg_channel_id || '',
         chno: s.num || '',
         xtream: true
       });
@@ -92,7 +103,7 @@ const Xtream = {
       vod = await this.call(src, { action: 'get_vod_streams' }) || [];
     } catch (e) { console.warn('[xtream] vod', e); }
 
-    for (const s of vod) {
+    for (const s of drain(vod)) {
       const name = String(s.name || '').trim();
       items.push({
         key: 'x' + src.id + 'm' + s.stream_id,
@@ -119,7 +130,7 @@ const Xtream = {
       series = await this.call(src, { action: 'get_series' }) || [];
     } catch (e) { console.warn('[xtream] series', e); }
 
-    for (const s of series) {
+    for (const s of drain(series)) {
       const name = String(s.name || '').trim();
       items.push({
         key: 'x' + src.id + 's' + s.series_id,
@@ -218,26 +229,6 @@ const Xtream = {
       },
       seasons
     };
-  },
-
-  /** EPG curto (agora / a seguir) de um canal. */
-  async shortEpg(src, streamId, limit) {
-    try {
-      const d = await this.call(src, {
-        action: 'get_short_epg',
-        stream_id: streamId,
-        limit: limit || 4
-      });
-      const list = (d && d.epg_listings) || [];
-      return list.map((e) => ({
-        title: this._b64(e.title),
-        desc: this._b64(e.description),
-        start: e.start ? new Date(e.start.replace(' ', 'T')) : null,
-        end: e.end ? new Date(e.end.replace(' ', 'T')) : null
-      }));
-    } catch {
-      return [];
-    }
   },
 
   _b64(s) {

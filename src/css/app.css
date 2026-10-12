@@ -278,6 +278,8 @@ input, select, button, textarea { font-family: inherit; color: inherit; }
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
 .card-sub { font-size: 11px; color: var(--txt-dim); margin-top: 3px; }
+/* Capa sem título (cena de episódio no lugar do pôster): nome sempre visível. */
+.card-still .card-hover { opacity: 1; transform: translateY(0); }
 
 .card-badge {
   position: absolute; top: 8px; left: 8px; z-index: 4;
@@ -292,20 +294,6 @@ input, select, button, textarea { font-family: inherit; color: inherit; }
 
 .card-progress { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: rgba(255,255,255,.22); z-index: 3; }
 .card-progress > i { display: block; height: 100%; background: var(--accent); }
-
-/* EPG no card de canal: programa no ar + barra de quanto já passou. */
-.card-epg {
-  position: absolute; left: 0; right: 0; bottom: 0; z-index: 2;
-  padding: 16px 9px 7px;
-  background: linear-gradient(0deg, rgba(0,0,0,.9) 30%, transparent);
-  transition: opacity .18s;
-}
-.card-epg span {
-  display: block; font-size: 11.5px; font-weight: 600; color: #e6e6ec;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.card-epg i { position: absolute; left: 0; bottom: 0; height: 3px; background: var(--accent); }
-.card:hover .card-epg, .card:focus .card-epg { opacity: 0; }
 
 .card-fav {
   position: absolute; top: 6px; right: 6px; z-index: 5;
@@ -619,30 +607,6 @@ kbd {
   accent-color: var(--accent); cursor: pointer;
 }
 .pl-vol:hover input { width: 82px; opacity: 1; margin: 0 8px 0 2px; }
-.pl-live { display: flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 800; letter-spacing: 1px; color: var(--accent); }
-
-/* Ao vivo: selo à esquerda, programa no ar centralizado, barra e o próximo. */
-.pl-epg { display: flex; flex-direction: column; align-items: center; gap: 6px; margin-bottom: 10px; }
-.pl-epg-head { position: relative; width: 100%; display: flex; justify-content: center; align-items: center; min-height: 26px; }
-.pl-epg-head .pl-live {
-  position: absolute; left: 0; top: 50%; transform: translateY(-50%);
-  background: rgba(229,9,20,.14); border: 1px solid rgba(229,9,20,.45);
-  padding: 4px 10px; border-radius: 5px;
-}
-.pl-epg-now {
-  max-width: calc(100% - 260px); font-size: 19px; font-weight: 700; text-align: center;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.pl-epg-bar {
-  display: flex; align-items: center; gap: 12px; width: min(620px, 70%);
-  font-size: 12.5px; color: #ddd; font-variant-numeric: tabular-nums;
-}
-.pl-epg-track { flex: 1; height: 5px; border-radius: 3px; background: rgba(255,255,255,.22); overflow: hidden; }
-.pl-epg-track i { display: block; height: 100%; background: var(--accent); border-radius: 3px; transition: width .6s var(--ease); }
-.pl-epg-next { font-size: 13px; color: var(--txt-dim); text-align: center; max-width: 80%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pl-epg-next:empty { display: none; }
-.pl-live .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); animation: pulse 1.6s infinite; }
-
 .pl-menu-wrap { position: relative; }
 .pl-menu {
   position: absolute; bottom: 46px; right: 0; min-width: 190px; max-height: 320px; overflow-y: auto;

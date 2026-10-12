@@ -15,7 +15,6 @@ const App = {
     }
 
     Player.init();
-    this.bindEpg();
     this.bindChrome();
     this.bindNav();
     this.bindCards();
@@ -50,8 +49,6 @@ const App = {
       delete src.stale;
       Store.data.activeSource = src.id;
       Store.save();
-      // Com cache, o guia já entra na primeira tela; senão chega depois.
-      await EPG.init(src).catch((e) => console.warn('[epg]', e));
       U.loader(false);
       this.hideOnboarding();
       UI.state.live.cat = '__all__';
@@ -80,43 +77,6 @@ const App = {
       el.classList.add('out');
       setTimeout(() => el.remove(), 600);
     }, Math.max(0, MIN_MS - performance.now()));
-  },
-
-  /* ================================================================
-   * Guia de programação
-   * ================================================================ */
-  bindEpg() {
-    EPG.onUpdate(() => {
-      UI.refreshEpg();
-      if (UI.view === 'settings') UI.renderEpgStatus();
-    });
-    // Programas trocam de hora em hora: avança as faixas e renova o guia velho.
-    setInterval(() => {
-      UI.refreshEpg();
-      const src = Store.activeSourceObj();
-      // Só renova um guia que já funcionou; se o download falhou, fica no botão de Configurações.
-      if (src && EPG.sourceId === src.id && EPG.status.state === 'ok' && EPG.stale()) EPG.refresh(src);
-    }, 60000);
-
-    $('#epgRefreshBtn').onclick = async () => {
-      const src = Store.activeSourceObj();
-      if (!src) return U.toast('Adicione uma lista primeiro.', 'warn');
-      const res = await EPG.refresh(src);
-      U.toast(res.ok ? 'Programação atualizada' : 'EPG: ' + res.error, res.ok ? 'ok' : 'warn');
-    };
-
-    $('#setEpgUrl').addEventListener('change', async (e) => {
-      const src = Store.activeSourceObj();
-      if (!src) return;
-      const url = U.cleanUrl(e.target.value);
-      if (url && !/^https?:\/\//i.test(url)) return U.toast('Informe uma URL começando com http:// ou https://', 'warn');
-      if (url) src.epgUrl = url; else delete src.epgUrl;
-      Store.save();
-      EPG.reset(src.id);
-      UI.renderSettings();
-      const res = await EPG.refresh(src);
-      U.toast(res.ok ? 'Programação carregada' : 'EPG: ' + res.error, res.ok ? 'ok' : 'warn');
-    });
   },
 
   showOnboarding() { $('#onboarding').classList.remove('hidden'); },
@@ -412,7 +372,7 @@ const App = {
         const next = Store.activeSourceObj();
         if (next) this.loadSource(next).catch(() => {});
         else {
-          Lib.all = []; Lib.live = []; Lib.movies = []; Lib.series = [];
+          Lib.reset();
           this.showOnboarding();
         }
       }

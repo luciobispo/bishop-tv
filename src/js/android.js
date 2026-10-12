@@ -109,10 +109,11 @@
         await pump(resp, onChunk);
         return { ok: true };
       }
-      const text = await resp.text();
-      if (!json) return { ok: true, data: text };
+      if (!json) return { ok: true, data: await resp.text() };
+      // Direto dos bytes: o catálogo Xtream tem dezenas de MB e, via text(),
+      // o texto inteiro e o objeto ficariam na memória ao mesmo tempo.
       try {
-        return { ok: true, data: JSON.parse(text) };
+        return { ok: true, data: await resp.json() };
       } catch {
         return {
           ok: false,

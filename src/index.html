@@ -285,22 +285,6 @@
 
       <div class="setting">
         <div>
-          <strong>Guia de programação (EPG)</strong>
-          <p class="muted" id="epgStatus"></p>
-        </div>
-        <button class="btn btn-ghost" id="epgRefreshBtn">Atualizar EPG</button>
-      </div>
-
-      <div class="setting">
-        <div>
-          <strong>Endereço do EPG</strong>
-          <p class="muted">Em branco, usa o guia do provedor. Vale para a lista em uso.</p>
-        </div>
-        <input type="text" id="setEpgUrl" class="mini-input wide" spellcheck="false">
-      </div>
-
-      <div class="setting">
-        <div>
           <strong>Retomar de onde parei</strong>
           <p class="muted">Salva a posição de filmes e episódios.</p>
         </div>
@@ -456,19 +440,6 @@
     </div>
 
     <div class="pl-bottom">
-      <!-- Ao vivo: selo + programa no ar (EPG), com barra de quanto já passou. -->
-      <div class="pl-epg hidden" id="plEpg">
-        <div class="pl-epg-head">
-          <div class="pl-live"><span class="dot"></span> AO VIVO</div>
-          <div class="pl-epg-now" id="plEpgNow"></div>
-        </div>
-        <div class="pl-epg-bar" id="plEpgBar">
-          <span id="plEpgStart"></span>
-          <div class="pl-epg-track"><i id="plEpgFill"></i></div>
-          <span id="plEpgEnd"></span>
-        </div>
-        <div class="pl-epg-next" id="plEpgNext"></div>
-      </div>
       <div class="pl-seek" id="plSeek">
         <div class="pl-seek-buf" id="plSeekBuf"></div>
         <div class="pl-seek-played" id="plSeekPlayed"></div>
@@ -539,7 +510,6 @@
 <script src="js/m3u.js"></script>
 <script src="js/xtream.js"></script>
 <script src="js/library.js"></script>
-<script src="js/epg.js"></script>
 <script src="js/player.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/app.js"></script>
