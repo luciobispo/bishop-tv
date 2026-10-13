@@ -15,6 +15,7 @@ const Player = {
   hideTimer: null,
   progressTimer: null,
   libsReady: { hls: false, mpegts: false },
+  _langDone: { audio: false, sub: false },
 
   /* ------------------------------------------------------------------
    * Bootstrap
@@ -91,7 +92,11 @@ const Player = {
     $('#plDur').classList.toggle('hidden', this.isLive);
     $$('.vod-only').forEach((b) => b.classList.toggle('hidden', this.isLive));
     $('#plZapBtn').classList.toggle('hidden', !this.isLive);
+    $('#plGuideBtn').classList.toggle('hidden', !this.isLive);
+    $('#plFav').classList.toggle('hidden', item.type === 'replay');
+    $('#plExtBtn').classList.toggle('hidden', !window.bishop.externalPlayer);
     this.syncFav();
+    if (this.isLive) this.refreshEpg();
 
     if (Store.get('keepAwake')) window.bishop.keepAwake(true);
 
@@ -99,6 +104,86 @@ const Player = {
     await this.attach(item.url, opts.resumeAt);
     this.showUI();
     this.startProgressTimer();
+  },
+
+  /** Programa no ar no subtítulo do player (canais ao vivo com guia). */
+  async refreshEpg() {
+    const it = this.item;
+    if (!it || !this.isLive || typeof EPG === 'undefined' || !EPG.ready()) return;
+    const nn = await EPG.nowNext(it).catch(() => null);
+    if (this.item !== it) return;
+    $('#plSub').textContent = nn ? EPG.describe(nn) : (it.group || '');
+  },
+
+  /**
+   * Abre no VLC/mpv (só no PC). O Chromium não decodifica MKV nem áudio
+   * AC3/E-AC3 — nesses casos o vídeo fica mudo ou nem abre.
+   */
+  async openExternal(item) {
+    item = item || this.item;
+    if (!item || !window.bishop.externalPlayer) return;
+    const res = await window.bishop.externalPlayer.open({
+      url: item.url,
+      title: [item.title || item.name, item.season != null && item.episode != null ? `T${item.season} E${item.episode}` : '']
+        .filter(Boolean).join(' · '),
+      userAgent: item.userAgent || Store.get('userAgent') || '',
+      referer: item.referer || ''
+    });
+    if (!res.ok) return U.toast(res.error, 'warn', 7000);
+    if (this.open) {
+      this.saveProgress();
+      this.close();
+    }
+    U.toast(`Abrindo no ${res.name}…`, 'ok');
+  },
+
+  /* ------------------------------------------------------------------
+   * Idioma preferido de áudio e legendas (Configurações)
+   * ------------------------------------------------------------------ */
+  LANGS: {
+    pt: /^(pt|por|pob|portug|dub|brazil)/,
+    en: /^(en|eng|ingl|english)/,
+    es: /^(es|spa|esp|cast|lat|span)/
+  },
+
+  langMatch(pref, ...labels) {
+    const re = this.LANGS[pref];
+    return !!re && labels.some((l) => l && re.test(String(l).trim().toLowerCase()));
+  },
+
+  /** Aplica a preferência uma vez por stream; depois vale a escolha manual. */
+  applyPreferredTracks() {
+    const hls = this.hls;
+    if (!hls) return;
+    const a = Store.get('audioLang');
+    if (a && !this._langDone.audio && hls.audioTracks && hls.audioTracks.length > 1) {
+      this._langDone.audio = true;
+      const i = hls.audioTracks.findIndex((t) => this.langMatch(a, t.lang, t.name));
+      if (i >= 0 && i !== hls.audioTrack) hls.audioTrack = i;
+    }
+    const s = Store.get('subLang');
+    if (s && s !== 'off' && !this._langDone.sub && hls.subtitleTracks && hls.subtitleTracks.length) {
+      this._langDone.sub = true;
+      const i = hls.subtitleTracks.findIndex((t) => this.langMatch(s, t.lang, t.name));
+      if (i >= 0) {
+        hls.subtitleTrack = i;
+        hls.subtitleDisplay = true;
+      }
+    }
+  },
+
+  /** Mesmo critério para MP4/WebM tocados direto pelo <video>. */
+  applyPreferredNativeAudio() {
+    const a = Store.get('audioLang');
+    const tracks = this.video.audioTracks;
+    if (!a || this._langDone.audio || !tracks || tracks.length < 2) return;
+    this._langDone.audio = true;
+    for (let i = 0; i < tracks.length; i++) {
+      if (this.langMatch(a, tracks[i].language, tracks[i].label)) {
+        for (let k = 0; k < tracks.length; k++) tracks[k].enabled = (k === i);
+        return;
+      }
+    }
   },
 
   /**
@@ -110,6 +195,11 @@ const Player = {
     // Canais e filmes ganham o coração no player; o ExoPlayer devolve o estado final.
     const canFav = item.type === 'live' || item.type === 'movie';
     let res = {};
+    // Canal com guia: o programa no ar vai no subtítulo do ExoPlayer.
+    let epgLine = '';
+    if (this.isLive && typeof EPG !== 'undefined' && EPG.ready()) {
+      epgLine = EPG.describe(await EPG.nowNext(item).catch(() => null));
+    }
     if (typeof UI !== 'undefined') UI.parkImages();
     try {
       res = await window.bishop.nativePlayer.play({
@@ -117,7 +207,9 @@ const Player = {
         ...(canFav ? { favorite: Store.isFav(item.key) } : {}),
         buffer: Store.get('buffer') || 'normal',
         title: item.title || item.name || '',
-        subtitle: opts.subtitle || this.subtitleFor(item),
+        subtitle: opts.subtitle || epgLine || this.subtitleFor(item),
+        audioLang: Store.get('audioLang') || '',
+        subLang: Store.get('subLang') || 'off',
         userAgent: Store.get('userAgent') || '',
         aspectRatio: Store.get('aspectRatio') || 'fit',
         startMs: Math.round((opts.resumeAt || 0) * 1000),
@@ -203,6 +295,7 @@ const Player = {
     $('#plSeekKnob').style.left = '0';
     $('#plQualityBtn').classList.add('hidden');
     $('#plAudioBtn').classList.add('hidden');
+    this._langDone = { audio: false, sub: false };
 
     const gen = ++this._gen;
     try {
@@ -374,7 +467,8 @@ const Player = {
         this.start(resumeAt);
       });
       hls.on(window.Hls.Events.LEVEL_SWITCHED, () => this.buildQualityMenu());
-      hls.on(window.Hls.Events.AUDIO_TRACKS_UPDATED, () => this.buildAudioMenu());
+      hls.on(window.Hls.Events.AUDIO_TRACKS_UPDATED, () => { this.applyPreferredTracks(); this.buildAudioMenu(); });
+      hls.on(window.Hls.Events.SUBTITLE_TRACKS_UPDATED, () => { this.applyPreferredTracks(); this.buildAudioMenu(); });
       hls.on(window.Hls.Events.ERROR, (_e, data) => {
         if (!data.fatal) return;
         switch (data.type) {
@@ -589,6 +683,22 @@ const Player = {
     host.appendChild(frag);
     const active = host.querySelector('.zap-item.active');
     if (active) active.scrollIntoView({ block: 'center' });
+    this._fillZapEpg(host, list);
+  },
+
+  /** Troca a categoria de cada canal pelo programa no ar, conforme o guia responde. */
+  async _fillZapEpg(host, list) {
+    if (typeof EPG === 'undefined' || !EPG.ready()) return;
+    const gen = this._zapGen = (this._zapGen || 0) + 1;
+    for (const b of host.querySelectorAll('.zap-item')) {
+      if (gen !== this._zapGen) return;  // a lista foi redesenhada
+      const it = list[b.dataset.idx];
+      const nn = it ? await EPG.nowNext(it).catch(() => null) : null;
+      if (gen !== this._zapGen) return;
+      if (!nn || !nn.now) continue;
+      const g = b.querySelector('.zi-grp');
+      if (g) g.textContent = '▶ ' + nn.now.title;
+    }
   },
 
   /* ------------------------------------------------------------------
@@ -596,8 +706,11 @@ const Player = {
    * ------------------------------------------------------------------ */
   startProgressTimer() {
     this.stopProgressTimer();
+    let ticks = 0;
     this.progressTimer = setInterval(() => {
       this.saveProgress();
+      // Ao vivo: o programa do subtítulo muda sozinho (a cada ~1 min).
+      if (this.isLive && ++ticks % 8 === 0) this.refreshEpg();
     }, 8000);
   },
 
@@ -687,6 +800,7 @@ const Player = {
     $('#plErrorMsg').textContent = msg;
     $('#plError').classList.remove('hidden');
     $('#plAltFormat').classList.toggle('hidden', this.triedAlt);
+    $('#plExternal').classList.toggle('hidden', !window.bishop.externalPlayer);
     this.showUI();
   },
 
@@ -742,7 +856,11 @@ const Player = {
     const seek = $('#plSeek');
     const seekInput = $('#plSeekInput');
 
-    v.addEventListener('playing', () => { this.showLoading(false); this.syncPlayIcon(); this.showUI(); this.buildAudioMenu(); });
+    v.addEventListener('playing', () => {
+      this.showLoading(false); this.syncPlayIcon(); this.showUI();
+      if (!this.hls) this.applyPreferredNativeAudio();
+      this.buildAudioMenu();
+    });
     v.addEventListener('play',    () => this.syncPlayIcon());
     v.addEventListener('pause',   () => { this.syncPlayIcon(); this.showUI(); });
     v.addEventListener('waiting', () => this.showLoading(true, 'Carregando buffer…'));
@@ -825,6 +943,9 @@ const Player = {
     };
     $('#plRetry').onclick = () => { this.triedAlt = false; this.attach(this.item.url); };
     $('#plAltFormat').onclick = () => this.tryAlternate();
+    $('#plExternal').onclick = () => this.openExternal();
+    $('#plExtBtn').onclick = () => this.openExternal();
+    $('#plGuideBtn').onclick = () => { if (this.item && typeof UI !== 'undefined') UI.openGuide(this.item); };
     $('#plCloseErr').onclick = () => this.close();
     $('#plFav').onclick = () => {
       const target = this.item.type === 'episode' && this.item.seriesRef ? this.item.seriesRef : this.item;
@@ -908,6 +1029,11 @@ const Player = {
   bindKeys() {
     document.addEventListener('keydown', (e) => {
       if (!this.open) return;
+      // Guia aberto por cima do player: Esc fecha só ele; o resto fica com o guia.
+      if (!$('#guide').classList.contains('hidden')) {
+        if (e.key === 'Escape') { e.preventDefault(); UI.closeGuide(); }
+        return;
+      }
       const tag = (e.target.tagName || '').toLowerCase();
       if (tag === 'input' || tag === 'textarea' || tag === 'select') {
         if (e.key === 'Escape') { $('#zap').classList.add('hidden'); e.target.blur(); }
@@ -940,6 +1066,7 @@ const Player = {
         case 'f': window.bishop.window.toggleFullscreen(); break;
         case 'm': v.muted = !v.muted; this.showUI(); break;
         case 'c': if (this.isLive) this.openZap(); break;
+        case 'g': if (this.isLive && typeof UI !== 'undefined') UI.openGuide(this.item); break;
         case 'PageUp':   if (this.context) this.step(-1); break;
         case 'PageDown': if (this.context) this.step(1); break;
       }

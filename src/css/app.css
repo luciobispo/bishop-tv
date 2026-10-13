@@ -839,6 +839,61 @@ kbd {
   .sp-glow { animation: spGlowIn .8s .5s ease-out both; }
 }
 
+/* ======================= GUIA (EPG) E REPLAY ======================= */
+/* Acima do player: o guia também abre com o vídeo tocando. */
+#guide { z-index: 130; }
+.guide-box {
+  width: min(760px, calc(100vw - 48px)); max-height: calc(100vh - 80px);
+  display: flex; flex-direction: column;
+  background: var(--bg-elev); border: 1px solid var(--line); border-radius: var(--radius-lg);
+  box-shadow: 0 30px 80px rgba(0,0,0,.6); overflow: hidden;
+}
+.guide-head { display: flex; align-items: center; gap: 14px; padding: 18px 20px; border-bottom: 1px solid var(--line-soft); }
+.guide-head img { width: 64px; height: 40px; object-fit: contain; flex-shrink: 0; }
+.guide-titles { flex: 1; min-width: 0; }
+.guide-titles h3 { font-size: 18px; font-weight: 680; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.guide-list { overflow-y: auto; padding: 6px 10px 14px; }
+.guide-day {
+  position: sticky; top: 0; z-index: 1; background: var(--bg-elev);
+  padding: 14px 10px 6px; font-size: 12px; text-transform: uppercase; letter-spacing: 1.4px; color: var(--txt-faint);
+}
+.guide-row {
+  display: flex; gap: 14px; width: 100%; text-align: left; align-items: flex-start;
+  background: none; border: 0; border-radius: var(--radius); padding: 10px; color: var(--txt-dim);
+  cursor: pointer; font: inherit;
+}
+.guide-row:hover { background: rgba(255,255,255,.07); color: #fff; }
+.guide-row.guide-now { background: rgba(229,9,20,.16); color: #fff; }
+.guide-row.guide-past.off, .guide-row.guide-future { cursor: default; }
+.guide-row.guide-past.off { opacity: .55; }
+.guide-time { width: 46px; flex-shrink: 0; font-variant-numeric: tabular-nums; font-size: 13px; padding-top: 1px; color: var(--txt-faint); }
+.guide-now .guide-time { color: #fff; }
+.guide-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.guide-name { font-size: 14px; font-weight: 600; color: inherit; }
+.guide-desc {
+  font-size: 12px; color: var(--txt-faint); line-height: 1.45;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.guide-badge {
+  display: inline-block; margin-left: 8px; padding: 1px 7px; border-radius: 4px; vertical-align: 1px;
+  font-size: 10.5px; font-weight: 700; letter-spacing: .4px; background: rgba(255,255,255,.12); color: #fff;
+}
+.guide-badge.live { background: var(--accent); }
+.guide-bar { display: block; height: 3px; border-radius: 2px; background: rgba(255,255,255,.18); margin-top: 4px; }
+.guide-bar i { display: block; height: 100%; border-radius: 2px; background: var(--accent); }
+
+/* Programa no ar sobre o logo do canal. */
+.card-epg {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 2;
+  padding: 14px 9px 6px; font-size: 11px; line-height: 1.25; color: #fff;
+  background: linear-gradient(0deg, rgba(0,0,0,.85), transparent);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; pointer-events: none;
+}
+
+.sort-select { max-width: 210px; }
+.setting-ctl { display: flex; align-items: center; gap: 14px; flex-shrink: 0; }
+.setting .muted.warn, .muted.warn { color: #f5a524; }
+
 /* ======================= ANDROID ======================= */
 /* Sem janela para minimizar/fechar: o sistema cuida disso. */
 .is-android #titlebar { display: none; }
@@ -863,3 +918,5 @@ kbd {
 .is-android .rail-item:focus .rail-ico { background: #fff; color: #0b0b0f; transform: scale(1.06); }
 .is-android .cat-item:focus { background: rgba(255,255,255,.18); color: #fff; }
 .is-android .cat-item.active:focus { background: var(--accent); }
+.is-android .guide-row:focus { background: rgba(255,255,255,.16); color: #fff; box-shadow: 0 0 0 3px #fff; }
+.is-android .guide-row.guide-now:focus { background: rgba(229,9,20,.35); }

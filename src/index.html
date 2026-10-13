@@ -115,6 +115,7 @@
           <h2 id="liveTitle">TV ao Vivo</h2>
           <div class="cat-tools">
             <input type="text" class="mini-input wide" id="liveFilter" placeholder="Filtrar canais nesta categoria…">
+            <select class="mini-input sort-select" id="liveSort" title="Ordenar"></select>
             <span class="count" id="liveCount"></span>
           </div>
         </div>
@@ -138,6 +139,7 @@
           <h2 id="movieTitle">Filmes</h2>
           <div class="cat-tools">
             <input type="text" class="mini-input wide" id="movieFilter" placeholder="Filtrar filmes…">
+            <select class="mini-input sort-select" id="movieSort" title="Ordenar"></select>
             <span class="count" id="movieCount"></span>
           </div>
         </div>
@@ -161,6 +163,7 @@
           <h2 id="seriesTitle">Séries</h2>
           <div class="cat-tools">
             <input type="text" class="mini-input wide" id="seriesFilter" placeholder="Filtrar séries…">
+            <select class="mini-input sort-select" id="seriesSort" title="Ordenar"></select>
             <span class="count" id="seriesCount"></span>
           </div>
         </div>
@@ -322,8 +325,79 @@
 
       <div class="setting">
         <div>
+          <strong>Atualizar listas automaticamente</strong>
+          <p class="muted">Idade da cópia salva a partir da qual a lista é baixada de novo ao abrir.</p>
+        </div>
+        <select id="setRefresh" class="mini-input">
+          <option value="1">A cada hora</option>
+          <option value="4">A cada 4 horas</option>
+          <option value="12">A cada 12 horas</option>
+          <option value="24">Uma vez por dia</option>
+          <option value="72">A cada 3 dias</option>
+          <option value="168">Uma vez por semana</option>
+          <option value="0">Só quando eu pedir</option>
+        </select>
+      </div>
+
+      <div class="setting">
+        <div>
+          <strong>Idioma do áudio</strong>
+          <p class="muted">Escolhido sozinho quando o filme ou canal tem mais de uma faixa.</p>
+        </div>
+        <select id="setAudioLang" class="mini-input">
+          <option value="">O padrão do stream</option>
+          <option value="pt">Português</option>
+          <option value="en">Inglês</option>
+          <option value="es">Espanhol</option>
+        </select>
+      </div>
+
+      <div class="setting">
+        <div>
+          <strong>Legendas</strong>
+          <p class="muted">Liga a legenda nesse idioma quando o stream oferece.</p>
+        </div>
+        <select id="setSubLang" class="mini-input">
+          <option value="off">Desligadas</option>
+          <option value="pt">Português</option>
+          <option value="en">Inglês</option>
+          <option value="es">Espanhol</option>
+        </select>
+      </div>
+
+      <div class="setting">
+        <div>
+          <strong>Guia de programação (EPG)</strong>
+          <p class="muted">Mostra o programa no ar nos canais e libera o replay em listas Xtream.</p>
+          <p class="muted" id="epgStatus"></p>
+        </div>
+        <div class="setting-ctl">
+          <button class="btn btn-ghost sm" id="epgRefreshBtn">Atualizar guia</button>
+          <label class="switch"><input type="checkbox" id="setEpg" checked><span></span></label>
+        </div>
+      </div>
+
+      <div class="setting">
+        <div>
+          <strong>Endereço do guia desta lista</strong>
+          <p class="muted">Deixe vazio para usar o do painel Xtream ou o que a lista anuncia (url-tvg).</p>
+        </div>
+        <input type="text" id="setEpgUrl" class="mini-input wide" spellcheck="false">
+      </div>
+
+      <div class="setting desktop-only">
+        <div>
+          <strong>Player externo</strong>
+          <p class="muted">Para o que o app não toca sozinho: arquivos .mkv e áudio Dolby (AC3/E-AC3). Vazio = detectar VLC ou mpv.</p>
+          <p class="muted" id="extPlayerInfo"></p>
+        </div>
+        <input type="text" id="setExtPlayer" class="mini-input wide" spellcheck="false" placeholder="C:\Program Files\VideoLAN\VLC\vlc.exe">
+      </div>
+
+      <div class="setting">
+        <div>
           <strong>Limpar cache de listas</strong>
-          <p class="muted">Força o recarregamento completo na próxima abertura.</p>
+          <p class="muted">Força o recarregamento completo da lista e do guia na próxima abertura.</p>
         </div>
         <button class="btn btn-ghost" id="clearCacheBtn">Limpar cache</button>
       </div>
@@ -352,6 +426,8 @@
         <div><kbd>↑</kbd> <kbd>↓</kbd> Volume — ou trocar de canal ao vivo</div>
         <div><kbd>F</kbd> Tela cheia</div>
         <div><kbd>M</kbd> Mudo</div>
+        <div><kbd>C</kbd> Lista de canais (ao vivo)</div>
+        <div><kbd>G</kbd> Programação e replay (ao vivo)</div>
         <div><kbd>Esc</kbd> Sair do player</div>
         <div><kbd>Ctrl</kbd>+<kbd>K</kbd> Buscar</div>
       </div>
@@ -367,6 +443,23 @@
   <div class="ctx-box" role="menu">
     <div class="ctx-title" id="ctxTitle"></div>
     <div class="ctx-actions" id="ctxActions"></div>
+  </div>
+</div>
+
+<!-- ============ GUIA: programação e replay de um canal ============ -->
+<div id="guide" class="overlay hidden">
+  <div class="guide-box">
+    <div class="guide-head">
+      <img id="guideLogo" class="hidden" alt="">
+      <div class="guide-titles">
+        <h3 id="guideTitle"></h3>
+        <div class="muted" id="guideSub"></div>
+      </div>
+      <button class="icon-btn" id="guideClose" title="Fechar (Esc)">
+        <svg viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+      </button>
+    </div>
+    <div class="guide-list" id="guideList"></div>
   </div>
 </div>
 
@@ -448,6 +541,7 @@
     <div class="pl-error-actions">
       <button class="btn btn-play" id="plRetry">Tentar de novo</button>
       <button class="btn btn-ghost" id="plAltFormat">Tentar outro formato</button>
+      <button class="btn btn-ghost" id="plExternal">Abrir no VLC/mpv</button>
       <button class="btn btn-ghost" id="plCloseErr">Voltar</button>
     </div>
   </div>
@@ -464,6 +558,9 @@
       <div class="pl-top-right">
         <button class="icon-btn" id="plFav" title="Favoritos">
           <svg viewBox="0 0 24 24"><path d="M16.5 3c-1.74 0-3.41.81-4.5 2.09C10.91 3.81 9.24 3 7.5 3 4.42 3 2 5.42 2 8.5c0 3.78 3.4 6.86 8.55 11.54L12 21.35l1.45-1.32C18.6 15.36 22 12.28 22 8.5 22 5.42 19.58 3 16.5 3zm-4.4 15.55l-.1.1-.1-.1C7.14 14.24 4 11.39 4 8.5 4 6.5 5.5 5 7.5 5c1.54 0 3.04.99 3.57 2.36h1.87C13.46 5.99 14.96 5 16.5 5c2 0 3.5 1.5 3.5 3.5 0 2.89-3.14 5.74-7.9 10.05z"/></svg>
+        </button>
+        <button class="icon-btn" id="plGuideBtn" title="Programação e replay (G)">
+          <svg viewBox="0 0 24 24"><path d="M19 4h-1V2h-2v2H8V2H6v2H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2V6a2 2 0 00-2-2zm0 16H5V9h14zM7 11h5v5H7z"/></svg>
         </button>
         <button class="icon-btn" id="plZapBtn" title="Lista de canais (C)">
           <svg viewBox="0 0 24 24"><path d="M4 6h16v2H4zm0 5h16v2H4zm0 5h10v2H4z"/></svg>
@@ -512,6 +609,9 @@
           </button>
           <div class="pl-menu hidden" id="plQualityMenu"></div>
         </div>
+        <button class="icon-btn" id="plExtBtn" title="Abrir no player externo (VLC/mpv) — para .mkv e áudio Dolby">
+          <svg viewBox="0 0 24 24"><path d="M19 19H5V5h7V3H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7h-2zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3z"/></svg>
+        </button>
         <button class="icon-btn" id="plPip" title="Picture-in-picture">
           <svg viewBox="0 0 24 24"><path d="M19 11h-8v6h8zm2-8H3a2 2 0 00-2 2v14a2 2 0 002 2h18a2 2 0 002-2V5a2 2 0 00-2-2zm0 16H3V4.98h18z"/></svg>
         </button>
@@ -548,6 +648,7 @@
 <script src="js/m3u.js"></script>
 <script src="js/xtream.js"></script>
 <script src="js/library.js"></script>
+<script src="js/epg.js"></script>
 <script src="js/player.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/app.js"></script>

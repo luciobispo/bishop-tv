@@ -23,6 +23,7 @@ const App = {
     this.bindSettings();
     this.bindSearch();
     this.bindHide();
+    this.bindGuide();
 
     const active = Store.activeSourceObj();
     if (!active) {
@@ -50,6 +51,7 @@ const App = {
       delete src.stale;
       Store.data.activeSource = src.id;
       Store.save();
+      EPG.init(src);  // em segundo plano: o guia nunca segura a abertura da lista
       U.loader(false);
       this.hideOnboarding();
       UI.state.live.cat = '__all__';
@@ -99,6 +101,7 @@ const App = {
       }
       if (e.key === 'Escape') {
         if (!$('#ctxMenu').classList.contains('hidden')) this.closeItemMenu();
+        else if (!$('#guide').classList.contains('hidden')) UI.closeGuide();
         else if (!$('#detail').classList.contains('hidden')) UI.closeDetail();
         else if (UI.view === 'search') UI.nav('home');
       }
@@ -177,6 +180,10 @@ const App = {
         $('#app').scrollTop = 0;
       });
       $(r.catFilter).addEventListener('input', U.debounce(() => UI.renderCategories(type), 200));
+      const sort = $(r.sort);
+      sort.innerHTML = Lib.SORTS[type].map(([v, label]) => `<option value="${v}">${U.esc(label)}</option>`).join('');
+      sort.value = UI.sortOf(type);
+      sort.addEventListener('change', () => UI.setSort(type, sort.value));
       $(r.filter).addEventListener('input', U.debounce((e) => {
         UI.state[type].filter = e.target.value;
         UI.renderCatalog(type);
@@ -305,6 +312,12 @@ const App = {
       const noun = { live: 'canal', movie: 'filme', series: 'série' }[target.type] || 'item';
       const group = target.group || 'Diversos';
       title = target.title || target.name;
+      if (target.type === 'live') {
+        acts.push([target.archive ? 'Programação e replay' : 'Programação', () => UI.openGuide(target)]);
+      }
+      if (window.bishop.externalPlayer && target.url && (target.type === 'live' || target.type === 'movie')) {
+        acts.push(['Abrir no player externo (VLC/mpv)', () => this.openInExternal(target)]);
+      }
       acts.push([`Ocultar ${noun}`, () => this.hide(() => Store.hideItem(target), `“${title}” oculto`)]);
       if (target.type in { live: 1, movie: 1, series: 1 }) {
         acts.push([`Ocultar categoria “${group}”`, () => this.hide(() => Store.hideGroup(target.type, group), `Categoria “${group}” oculta`)]);
@@ -320,6 +333,32 @@ const App = {
 
   closeItemMenu() {
     $('#ctxMenu').classList.add('hidden');
+  },
+
+  /** Filmes Xtream: a URL definitiva (extensão real) vem do get_vod_info. */
+  async openInExternal(item) {
+    const src = Store.activeSourceObj();
+    if (item.type === 'movie' && item.xtream && src && !item._info) {
+      const info = await Xtream.vodInfo(src, item.streamId);
+      if (info && info.ext) item.url = Xtream.vodUrl(src, item.streamId, info.ext);
+      item._info = info || {};
+    }
+    Player.openExternal(item);
+  },
+
+  /* ================================================================
+   * Guia de programação (EPG) e replay
+   * ================================================================ */
+  bindGuide() {
+    $('#guideClose').onclick = () => UI.closeGuide();
+    $('#guide').addEventListener('mousedown', (e) => { if (e.target.id === 'guide') UI.closeGuide(); });
+    U.on($('#guideList'), 'click', '.guide-row', (_e, el) => UI.guidePick(Number(el.dataset.gi)));
+
+    EPG.onUpdate(() => {
+      if (UI.view === 'settings') UI.renderEpgStatus();
+      if (EPG.ready() && UI.view === 'live') UI.fillEpg($$('#liveGrid .card'));
+      if (EPG.ready() && Player.open && Player.isLive) Player.refreshEpg();
+    });
   },
 
   hide(apply, msg) {
@@ -400,6 +439,7 @@ const App = {
           type: 'xtream',
           name: $('#xtName').value.trim() || (info.server_info && info.server_info.url) || 'Xtream',
           host, user, pass,
+          tz: (info.server_info && info.server_info.timezone) || '',
           expires: info.user_info.exp_date || null,
           maxConnections: info.user_info.max_connections || null
         });
@@ -457,6 +497,7 @@ const App = {
       if (!confirm(`Remover a lista “${src.name}”?`)) return;
       const wasActive = Store.data.activeSource === src.id;
       Store.removeSource(src.id);
+      EPG.forget(src.id);
       UI.renderSources();
       U.toast('Lista removida');
       if (wasActive) {
@@ -468,6 +509,14 @@ const App = {
         }
       }
     });
+  },
+
+  async refreshEpg() {
+    const src = Store.activeSourceObj();
+    if (!src) return;
+    const res = await EPG.refresh(src);
+    if (res.ok) U.toast('Guia de programação atualizado', 'ok');
+    else U.toast('Guia: ' + res.error, 'warn', 6000);
   },
 
   /**
@@ -563,8 +612,44 @@ const App = {
     $('#setBuffer').addEventListener('change', (e) => Store.set('buffer', e.target.value));
     $('#setResume').addEventListener('change', (e) => Store.set('resume', e.target.checked));
     $('#setAwake').addEventListener('change', (e) => Store.set('keepAwake', e.target.checked));
+    $('#setRefresh').addEventListener('change', (e) => Store.set('refreshHours', Number(e.target.value)));
+    $('#setAudioLang').addEventListener('change', (e) => Store.set('audioLang', e.target.value));
+    $('#setSubLang').addEventListener('change', (e) => Store.set('subLang', e.target.value));
+
+    // --- guia de programação ---
+    $('#setEpg').addEventListener('change', (e) => {
+      Store.set('epg', e.target.checked);
+      const src = Store.activeSourceObj();
+      if (src) EPG.init(src);
+      UI.renderEpgStatus();
+    });
+    $('#setEpgUrl').addEventListener('change', async (e) => {
+      const src = Store.activeSourceObj();
+      if (!src) return;
+      const url = U.cleanUrl(e.target.value);
+      if (url && !/^https?:\/\//i.test(url)) return U.toast('Informe um endereço começando com http:// ou https://', 'warn');
+      src.epgUrl = url;
+      Store.save();
+      await EPG.init(src);
+      if (Store.get('epg') && EPG.urlFor(src)) this.refreshEpg();
+    });
+    $('#epgRefreshBtn').onclick = () => this.refreshEpg();
+
+    // --- player externo (só no PC) ---
+    if (window.bishop.externalPlayer) {
+      $('#setExtPlayer').addEventListener('change', async (e) => {
+        Store.set('externalPlayer', e.target.value.trim().replace(/^"|"$/g, ''));
+        // O main lê o caminho do arquivo de configuração: grava já.
+        await Store.saveNow();
+        UI.renderExtPlayerInfo();
+      });
+    } else {
+      $$('.desktop-only').forEach((el) => el.classList.add('hidden'));
+    }
 
     $('#clearCacheBtn').onclick = async () => {
+      const src = Store.activeSourceObj();
+      if (src) await EPG.forget(src.id).then(() => EPG.init(src));
       await window.bishop.cache.clear();
       U.toast('Cache limpo. Use “Atualizar” em Fontes para recarregar.', 'ok');
     };

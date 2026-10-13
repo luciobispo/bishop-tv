@@ -30,6 +30,11 @@ contextBridge.exposeInMainWorld('bishop', {
   get: (url, opts) => ipcRenderer.invoke('net:get', url, opts),
   getJson: (url) => ipcRenderer.invoke('net:getJson', url),
   probe: (url) => ipcRenderer.invoke('net:probe', url),
+  // VLC/mpv para o que o Chromium não toca (MKV, áudio AC3/E-AC3).
+  externalPlayer: {
+    open: (opts) => ipcRenderer.invoke('player:external', opts),
+    detect: () => ipcRenderer.invoke('player:detectExternal')
+  },
   // Avisa quando o app passou a usar o DNS do Google/Cloudflare.
   onDnsFallback: (cb) => ipcRenderer.on('net:dnsFallback', () => cb()),
 

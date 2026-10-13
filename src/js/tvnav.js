@@ -16,7 +16,8 @@ const TvNav = {
   // mais próximo — ex.: de um canal para a esquerda cai na categoria atual.
   GROUPS: '.cat-list, #rail, .tabs, .search-tabs',
   KEYS: { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' },
-  MODALS: ['#ctxMenu', '#detail', '#onboarding'],
+  // Ordem = prioridade: o guia pode ser aberto pelo menu de um card.
+  MODALS: ['#ctxMenu', '#guide', '#detail', '#onboarding'],
   // Segurar OK num card/categoria abre o menu de ocultar (App.openItemMenu).
   MENU_TARGETS: '.card, .cat-item',
   LONG_PRESS_MS: 550,
@@ -192,7 +193,8 @@ const TvNav = {
       return (view && (view.querySelector('#heroPlay') || view.querySelector('.card') || this.candidates(view)[0])) ||
         $('.rail-item.active') || this.candidates(scope)[0];
     }
-    return scope.querySelector('.btn-play:not(.hidden)') || this.candidates(scope)[0];
+    // No guia, o foco começa no programa que está no ar.
+    return scope.querySelector('.guide-now, .btn-play:not(.hidden)') || this.candidates(scope)[0];
   },
 
   /**

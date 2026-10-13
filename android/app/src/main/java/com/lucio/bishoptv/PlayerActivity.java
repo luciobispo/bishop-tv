@@ -61,6 +61,8 @@ public class PlayerActivity extends AppCompatActivity {
     static final String EXTRA_BUFFER = "buffer";
     static final String EXTRA_CAN_FAVORITE = "canFavorite";
     static final String EXTRA_FAVORITE = "favorite";
+    static final String EXTRA_AUDIO_LANG = "audioLang";
+    static final String EXTRA_SUB_LANG = "subLang";
     static final String RESULT_POSITION_MS = "positionMs";
     static final String RESULT_DURATION_MS = "durationMs";
     static final String RESULT_ENDED = "ended";
@@ -130,6 +132,7 @@ public class PlayerActivity extends AppCompatActivity {
             .setSeekBackIncrementMs(SEEK_STEP_MS)
             .setSeekForwardIncrementMs(SEEK_STEP_MS)
             .build();
+        applyPreferredLanguages(in.getStringExtra(EXTRA_AUDIO_LANG), in.getStringExtra(EXTRA_SUB_LANG));
         player.addListener(new Player.Listener() {
             @Override
             public void onPlaybackStateChanged(int state) {
@@ -323,6 +326,19 @@ public class PlayerActivity extends AppCompatActivity {
      * colchão é maior — sobretudo depois de um travamento — e o total em bytes
      * tem teto, porque o buffer mora no heap Java e o Firestick tem pouco.
      */
+    /**
+     * Idioma de áudio e legendas escolhido em Configurações. O ExoPlayer só
+     * troca de faixa se o stream tiver uma nesse idioma; sem ela, fica a padrão.
+     */
+    private void applyPreferredLanguages(String audioLang, String subLang) {
+        androidx.media3.common.TrackSelectionParameters.Builder b = player.getTrackSelectionParameters().buildUpon();
+        if (!TextUtils.isEmpty(audioLang)) b.setPreferredAudioLanguage(audioLang);
+        if (!TextUtils.isEmpty(subLang) && !"off".equals(subLang)) {
+            b.setPreferredTextLanguage(subLang).setSelectUndeterminedTextLanguage(false);
+        }
+        player.setTrackSelectionParameters(b.build());
+    }
+
     private LoadControl buildLoadControl() {
         int startMs, rebufferMs, maxMs, maxMb;
         switch (bufferPref) {

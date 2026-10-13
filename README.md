@@ -108,8 +108,21 @@ das séries. Com `.m3u` puro, o app deduz as séries a partir dos nomes dos arqu
 - Agrupamento de episódios soltos em séries, com seletor de temporada
 - Categorias na lateral, filtro por texto dentro da categoria e busca global (`Ctrl+K`)
 - Minha Lista (favoritos) e Continuar assistindo, com barra de progresso nas capas
-- Cache em disco das listas: a reabertura é instantânea, e listas com mais de 12h
-  são atualizadas em segundo plano
+- Ordenação dos catálogos (A–Z, adicionados recentemente, lançamento, nota, número do
+  canal), lembrada entre as aberturas
+- Cache em disco das listas: a reabertura é instantânea, e listas mais velhas que o
+  intervalo escolhido em Configurações (padrão 12h) são atualizadas em segundo plano
+
+**Guia de programação (EPG) e replay**
+- O programa no ar aparece nos canais, no zapping e no player, que troca sozinho
+  quando o programa muda
+- Botão direito num canal (na TV: segurar OK) → **Programação**: a grade do canal, de
+  dias atrás até amanhã
+- Canais Xtream com arquivo (`tv_archive`) ganham **replay**: escolha um programa que já
+  passou e ele toca do começo, com barra de avanço
+- O guia vem do painel Xtream (`xmltv.php`), do `url-tvg` da lista ou de um endereço
+  informado em Configurações; é gravado em disco (IndexedDB), não na memória — cabe no
+  Firestick
 
 **Player**
 - HLS (`.m3u8`) via hls.js, MPEG-TS (`.ts`) via mpegts.js, e MP4/WebM nativo
@@ -118,6 +131,9 @@ das séries. Com `.m3u` puro, o app deduz as séries a partir dos nomes dos arqu
 - Zapping lateral com busca de canal, e troca de canal pelas setas ↑ ↓
 - Retomada automática de filmes e episódios; episódio seguinte toca sozinho
 - Picture-in-picture, tela cheia, e a tela não apaga durante a reprodução
+- Idioma preferido de áudio e legendas, escolhido sozinho quando o stream oferece
+- No PC, **Abrir no VLC/mpv** para o que o Chromium não toca (`.mkv`, áudio Dolby
+  AC3/E-AC3), com o mesmo User-Agent
 
 **Atalhos**
 
@@ -129,6 +145,7 @@ das séries. Com `.m3u` puro, o app deduz as séries a partir dos nomes dos arqu
 | `F` / `F11` | Tela cheia |
 | `M` | Mudo |
 | `C` | Lista de canais (zapping) |
+| `G` | Programação e replay do canal |
 | `Esc` | Sair do player |
 | `Ctrl+K` | Buscar |
 
@@ -200,7 +217,8 @@ src/js/util.js     helpers (texto, tempo, DOM, toasts)
 src/js/store.js    estado persistido: fontes, favoritos, progresso, ajustes
 src/js/m3u.js      parser M3U / M3U Plus e detecção de tipo e episódios
 src/js/xtream.js   cliente da API Xtream Codes
-src/js/library.js  índice do catálogo: categorias, busca, fileiras da home
+src/js/library.js  índice do catálogo: categorias, busca, ordenação, fileiras da home
+src/js/epg.js      guia de programação (XMLTV → IndexedDB) e consultas por canal
 src/js/player.js   motores de reprodução e controles
 src/js/ui.js       renderização das telas
 src/js/app.js      inicialização e ligação dos eventos
@@ -221,8 +239,16 @@ mas nem todos os provedores vão funcionar.
 **Certificados autoassinados** são aceitos (`ignore-certificate-errors`), situação comum em
 painéis IPTV.
 
-**Arquivos `.mkv`** podem não tocar: o Chromium não suporta o container Matroska. `.mp4`, `.ts`,
-`.m3u8` e `.webm` funcionam.
+**Arquivos `.mkv`** podem não tocar, e áudio Dolby (AC3/E-AC3) sai mudo: o Chromium não suporta
+nenhum dos dois. `.mp4`, `.ts`, `.m3u8` e `.webm` funcionam. Para os outros, use **Abrir no
+VLC/mpv** (no player ou no botão direito do item); o app detecta o VLC e o mpv nos locais de
+instalação padrão, ou usa o caminho informado em Configurações.
+
+**Novas tentativas.** Chamadas à API e downloads que falham por erro passageiro (5xx, 429,
+conexão derrubada, tempo esgotado em chamada curta) são repetidos duas vezes, após 1s e 3s.
+
+**Replay e fuso horário.** A URL de replay do Xtream leva a hora de início no fuso do servidor;
+o app usa o `timezone` que o painel informa no login.
 
 **Listas grandes** (50 mil+ itens) são indexadas em blocos para não travar a interface, e as
 grades renderizam em páginas conforme você rola.

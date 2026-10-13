@@ -30,7 +30,7 @@ const Lib = {
     const report = (m) => { if (onProgress) onProgress(m); };
     const prev = this.source;
     this.source = src;
-    const STALE_MS = 12 * 3600 * 1000;
+    const STALE_MS = this.staleMs();
     let hasCache = false;
 
     if (!force) {
@@ -83,6 +83,13 @@ const Lib = {
     return { fromCache: false };
   },
 
+  /** Idade a partir da qual a lista em cache é baixada de novo (Configurações). */
+  staleMs() {
+    const h = Number(Store.get('refreshHours'));
+    if (h === 0) return Infinity;           // só quando o usuário pedir
+    return (Number.isFinite(h) && h > 0 ? h : 12) * 3600 * 1000;
+  },
+
   async _loadCache(src, onProgress) {
     const cached = await window.bishop.cache.read(this.cacheKey(src));
     if (!(cached && cached.ok && cached.data && Array.isArray(cached.data.items) && cached.data.items.length)) {
@@ -121,7 +128,9 @@ const Lib = {
   async fetchSource(src, report) {
     if (src.type === 'xtream') {
       report('Conectando ao servidor…');
-      await Xtream.login(src);
+      const info = await Xtream.login(src);
+      // Fuso do painel: as URLs de replay usam a hora local do servidor.
+      if (info.server_info && info.server_info.timezone) src.tz = info.server_info.timezone;
       return Xtream.loadAll(src, report);
     }
 
@@ -148,8 +157,16 @@ const Lib = {
     }
 
     report('Interpretando a lista…');
-    const { items } = M3U.parse(text);
+    const { items, playlistAttrs } = M3U.parse(text);
+    this._keepTvgUrl(src, playlistAttrs);
     return items;
+  },
+
+  /** Endereço do guia (EPG) que a própria lista anuncia no cabeçalho #EXTM3U. */
+  _keepTvgUrl(src, attrs) {
+    const url = attrs && (attrs['url-tvg'] || attrs['x-tvg-url'] || '');
+    // Algumas listas trazem vários endereços separados por vírgula: fica o primeiro.
+    src.tvgUrl = String(url).split(',')[0].trim();
   },
 
   looksLikeM3U(text) {
@@ -173,7 +190,8 @@ const Lib = {
     if (!this.looksLikeM3U(head)) {
       throw new Error('O conteúdo não parece ser uma lista M3U válida.');
     }
-    const { items } = parser.end();
+    const { items, playlistAttrs } = parser.end();
+    this._keepTvgUrl(src, playlistAttrs);
     return items;
   },
 
@@ -351,6 +369,43 @@ const Lib = {
 
   get(key) {
     return this.byKey.get(key) || this.seriesByKey.get(key) || null;
+  },
+
+  /* ------------------------------------------------------------------
+   * Ordenação dos catálogos
+   * ------------------------------------------------------------------ */
+  SORTS: {
+    live:   [['default', 'Ordem da lista'], ['num', 'Número do canal'], ['az', 'A–Z'], ['za', 'Z–A']],
+    movie:  [['default', 'Ordem da lista'], ['added', 'Adicionados recentemente'], ['year', 'Lançamento'],
+             ['rating', 'Melhor avaliados'], ['az', 'A–Z'], ['za', 'Z–A']],
+    series: [['default', 'Ordem da lista'], ['added', 'Atualizados recentemente'], ['year', 'Lançamento'],
+             ['rating', 'Melhor avaliadas'], ['az', 'A–Z'], ['za', 'Z–A']]
+  },
+
+  /**
+   * Cópia ordenada; a lista original fica intacta (é a mesma usada pela busca,
+   * pela home e pelo zapping). Compara o nome já normalizado (_n) em vez de
+   * localeCompare: num catálogo de 100 mil itens a diferença é de segundos no
+   * Firestick. A última ordenação de "Todos" fica guardada.
+   */
+  sorted(list, mode) {
+    if (!mode || mode === 'default' || list.length < 2) return list;
+    const c = this._sortCache;
+    if (c && c.list === list && c.mode === mode && c.len === list.length) return c.out;
+    const name = (i) => i._n || (i._n = U.norm(i.title || i.name));
+    const num = (v) => parseFloat(String(v || '').replace(',', '.')) || 0;
+    const cmp = {
+      az: (a, b) => (name(a) < name(b) ? -1 : name(a) > name(b) ? 1 : 0),
+      za: (a, b) => (name(a) > name(b) ? -1 : name(a) < name(b) ? 1 : 0),
+      added: (a, b) => (b.added || 0) - (a.added || 0),
+      year: (a, b) => num(b.year) - num(a.year),
+      rating: (a, b) => this.rating(b) - this.rating(a),
+      num: (a, b) => (num(a.chno) || 1e9) - (num(b.chno) || 1e9)
+    }[mode];
+    if (!cmp) return list;
+    const out = list.slice().sort(cmp);
+    this._sortCache = { list, mode, len: list.length, out };
+    return out;
   },
 
   /* ------------------------------------------------------------------

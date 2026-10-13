@@ -142,6 +142,7 @@ const M3U = {
     out.logo = out.attrs['tvg-logo'] || out.attrs['logo'] || '';
     out.group = out.attrs['group-title'] || '';
     out.tvgName = out.attrs['tvg-name'] || '';
+    out.tvgId = out.attrs['tvg-id'] || '';
     out.chno = out.attrs['tvg-chno'] || out.attrs['channel-number'] || '';
     if (!out.name) out.name = out.tvgName || 'Sem nome';
     return out;
@@ -176,6 +177,10 @@ const M3U = {
       referer: it.referer || '',
       year: U.year(name)
     };
+
+    // Liga o canal ao guia (EPG). Só nos canais: em filmes e episódios seriam
+    // milhares de strings presas na memória sem uso.
+    if (type === 'live' && it.tvgId) item.tvgId = it.tvgId;
 
     if (type === 'series') {
       const ep = this.parseEpisode(name);

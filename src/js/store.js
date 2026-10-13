@@ -24,7 +24,13 @@ const Store = {
       keepAwake: true,
       volume: 1,
       muted: false,
-      aspectRatio: 'fit'
+      aspectRatio: 'fit',
+      refreshHours: 12,       // idade da lista em cache que dispara nova leitura; 0 = só manual
+      epg: true,              // guia de programação
+      audioLang: '',          // idioma preferido do áudio ('' = o do stream)
+      subLang: 'off',         // legendas preferidas ('off' = desligadas)
+      externalPlayer: '',     // caminho do VLC/mpv ('' = detectar)
+      sort: { live: 'default', movie: 'default', series: 'default' }
     }
   },
 
@@ -36,6 +42,7 @@ const Store = {
         ...saved,
         settings: { ...this.data.settings, ...(saved.settings || {}) }
       };
+      this.data.settings.sort = { live: 'default', movie: 'default', series: 'default', ...(this.data.settings.sort || {}) };
     }
     this.data.sources = this.data.sources || [];
     this.data.favorites = this.data.favorites || {};
@@ -137,7 +144,8 @@ const Store = {
 
   /* ---------------- progresso / continuar assistindo ---------------- */
   setProgress(item, pos, dur) {
-    if (!item || !item.key) return;
+    // Replays de programas não entram em "Continuar assistindo" nem no histórico.
+    if (!item || !item.key || item.type === 'replay') return;
     if (!isFinite(pos) || !isFinite(dur) || dur < 60) return;
 
     // Quase no fim: considera assistido.
@@ -194,7 +202,7 @@ const Store = {
 
   /* ---------------- recentes (inclui canais ao vivo) ---------------- */
   pushRecent(item) {
-    if (!item || !item.key) return;
+    if (!item || !item.key || item.type === 'replay') return;
     const entry = {
       key: item.key,
       name: item.name,

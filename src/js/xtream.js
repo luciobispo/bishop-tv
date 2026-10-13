@@ -47,6 +47,42 @@ const Xtream = {
     return `${host}/series/${encodeURIComponent(src.user)}/${encodeURIComponent(src.pass)}/${episodeId}.${ext || 'mp4'}`;
   },
 
+  /**
+   * Replay (catch-up) de um programa que já passou:
+   * /timeshift/usuário/senha/duração-em-minutos/AAAA-MM-DD:HH-MM/id.ts
+   * O início vai na hora local do servidor — por isso o fuso do painel.
+   */
+  timeshiftUrl(src, streamId, startMs, stopMs, ext) {
+    const host = U.normalizeHost(src.host);
+    const mins = Math.max(1, Math.ceil((stopMs - startMs) / 60000));
+    return `${host}/timeshift/${encodeURIComponent(src.user)}/${encodeURIComponent(src.pass)}/` +
+      `${mins}/${this.serverTime(src, startMs)}/${streamId}.${ext || 'ts'}`;
+  },
+
+  serverTime(src, ms) {
+    const opts = { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' };
+    let parts;
+    try {
+      parts = new Intl.DateTimeFormat('en-US', { ...opts, timeZone: src.tz || undefined }).formatToParts(new Date(ms));
+    } catch {
+      // Fuso desconhecido para o Intl: usa o deste aparelho.
+      parts = new Intl.DateTimeFormat('en-US', opts).formatToParts(new Date(ms));
+    }
+    const p = {};
+    for (const x of parts) p[x.type] = x.value;
+    return `${p.year}-${p.month}-${p.day}:${p.hour}-${p.minute}`;
+  },
+
+  /** Listas abertas do cache não passaram pelo login: busca o fuso uma vez. */
+  async ensureTimezone(src) {
+    if (src.tz !== undefined) return;
+    try {
+      const info = await this.login(src);
+      src.tz = (info.server_info && info.server_info.timezone) || '';
+      Store.save();
+    } catch { src.tz = ''; }
+  },
+
   /* ---------------- catálogo ---------------- */
   async loadAll(src, onProgress) {
     const report = (msg) => { if (onProgress) onProgress(msg); };
@@ -91,6 +127,10 @@ const Xtream = {
         url: this.liveUrl(src, s.stream_id, 'm3u8'),
         altUrl: this.liveUrl(src, s.stream_id, 'ts'),
         chno: s.num || '',
+        // Id do canal no XMLTV do painel, para o guia de programação.
+        ...(s.epg_channel_id ? { epgId: String(s.epg_channel_id) } : {}),
+        // Dias de replay (catch-up) que o painel guarda deste canal; 0 = sem replay.
+        ...(String(s.tv_archive) === '1' ? { archive: parseInt(s.tv_archive_duration, 10) || 1 } : {}),
         xtream: true
       });
     }

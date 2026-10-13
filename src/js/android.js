@@ -75,17 +75,43 @@
     return raw || 'Falha desconhecida na conexão.';
   }
 
-  /** Entrega o corpo aos pedaços, sem nunca montar o texto inteiro. */
+  /**
+   * Entrega o corpo aos pedaços, sem nunca montar o texto inteiro. Se
+   * `onChunk` devolver uma promessa (o EPG gravando no IndexedDB), a leitura
+   * espera por ela — senão o download correria na frente e os pedaços
+   * acumulariam na memória.
+   */
   async function pump(resp, onChunk) {
     const reader = resp.body.getReader();
     const dec = new TextDecoder();
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
-      onChunk(dec.decode(value, { stream: true }));
+      await onChunk(dec.decode(value, { stream: true }));
     }
     const tail = dec.decode();
-    if (tail) onChunk(tail);
+    if (tail) await onChunk(tail);
+  }
+
+  /**
+   * Erros passageiros (5xx/429, conexão derrubada, tempo esgotado em chamada
+   * curta) ganham mais duas tentativas, como no desktop — ver main.js.
+   * Streams (`onChunk`) não são repetidos: parte do texto já foi entregue.
+   */
+  const RETRY_DELAYS_MS = [1000, 3000];
+  const TRANSIENT_STATUS = [429, 500, 502, 503, 504, 520, 521, 522, 523, 524];
+
+  async function httpGet(url, opts = {}) {
+    let res;
+    for (let attempt = 0; ; attempt++) {
+      res = await httpGetOnce(url, opts);
+      if (res.ok || !res.transient || opts.onChunk || attempt >= RETRY_DELAYS_MS.length) break;
+      if (res.timedOut && (opts.timeout || 30000) > 30000) break;
+      await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[attempt]));
+    }
+    delete res.transient;
+    delete res.timedOut;
+    return res;
   }
 
   /**
@@ -93,7 +119,7 @@
    * do Capacitor — ver NativeHttpPlugin. Com `onChunk`, o texto vai sendo
    * entregue enquanto é lido, para listas que não cabem na memória de uma vez.
    */
-  async function httpGet(url, { timeout = 30000, json = false, onChunk } = {}) {
+  async function httpGetOnce(url, { timeout = 30000, json = false, onChunk } = {}) {
     let path = '';
     try {
       const res = await NativeHttp.download({ url, userAgent, timeoutMs: timeout });
@@ -102,7 +128,7 @@
         const extra = res.status === 401 || res.status === 403
           ? ' — usuário, senha ou assinatura recusados pelo servidor'
           : res.status === 404 ? ' — este endereço não existe nesse servidor' : '';
-        return { ok: false, error: `O servidor respondeu ${res.status}${extra}.` };
+        return { ok: false, transient: TRANSIENT_STATUS.includes(res.status), error: `O servidor respondeu ${res.status}${extra}.` };
       }
       const resp = path ? await fetch(Cap.convertFileSrc(path)) : new Response('');
       if (onChunk) {
@@ -122,7 +148,14 @@
         };
       }
     } catch (err) {
-      return { ok: false, error: describeError(err, url) };
+      const raw = String((err && (err.message || err.errorMessage)) || err || '');
+      const timedOut = /timeout|timed out/i.test(raw);
+      return {
+        ok: false,
+        transient: timedOut || /reset|closed|unexpected end|EOF|SocketException|ProtocolException/i.test(raw),
+        timedOut,
+        error: describeError(err, url)
+      };
     } finally {
       if (path) NativeHttp.discard({ path }).catch(() => {});
     }
@@ -184,6 +217,8 @@
   AppPlugin.addListener('backButton', () => {
     const menu = document.querySelector('#ctxMenu');
     if (menu && !menu.classList.contains('hidden')) return App.closeItemMenu();
+    const guide = document.querySelector('#guide');
+    if (guide && !guide.classList.contains('hidden')) return UI.closeGuide();
     const detail = document.querySelector('#detail');
     if (detail && !detail.classList.contains('hidden')) return UI.closeDetail();
     const search = document.querySelector('#searchInput');

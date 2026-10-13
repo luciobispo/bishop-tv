@@ -41,6 +41,8 @@ public class NativePlayerPlugin extends Plugin {
         intent.putExtra(PlayerActivity.EXTRA_LIVE, call.getBoolean("live", false));
         intent.putExtra(PlayerActivity.EXTRA_FALLBACK_URL, call.getString("fallbackUrl"));
         intent.putExtra(PlayerActivity.EXTRA_BUFFER, call.getString("buffer", "normal"));
+        intent.putExtra(PlayerActivity.EXTRA_AUDIO_LANG, call.getString("audioLang", ""));
+        intent.putExtra(PlayerActivity.EXTRA_SUB_LANG, call.getString("subLang", "off"));
         // Só itens que podem ir para a Minha Lista mandam "favorite"; os outros ficam sem o coração.
         if (call.getData().has("favorite")) {
             intent.putExtra(PlayerActivity.EXTRA_CAN_FAVORITE, true);

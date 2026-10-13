@@ -298,9 +298,21 @@ const UI = {
    * CATÁLOGOS (TV / Filmes / Séries)
    * ================================================================ */
   catalogRefs(type) {
-    if (type === 'live')   return { cats: '#liveCats', grid: '#liveGrid', title: '#liveTitle', count: '#liveCount', filter: '#liveFilter', catFilter: '#liveCatFilter', shape: 'logo', label: 'TV ao Vivo' };
-    if (type === 'movie')  return { cats: '#movieCats', grid: '#movieGrid', title: '#movieTitle', count: '#movieCount', filter: '#movieFilter', catFilter: '#movieCatFilter', shape: 'poster', label: 'Filmes' };
-    return { cats: '#seriesCats', grid: '#seriesGrid', title: '#seriesTitle', count: '#seriesCount', filter: '#seriesFilter', catFilter: '#seriesCatFilter', shape: 'poster', label: 'Séries' };
+    if (type === 'live')   return { cats: '#liveCats', grid: '#liveGrid', title: '#liveTitle', count: '#liveCount', filter: '#liveFilter', catFilter: '#liveCatFilter', sort: '#liveSort', shape: 'logo', label: 'TV ao Vivo' };
+    if (type === 'movie')  return { cats: '#movieCats', grid: '#movieGrid', title: '#movieTitle', count: '#movieCount', filter: '#movieFilter', catFilter: '#movieCatFilter', sort: '#movieSort', shape: 'poster', label: 'Filmes' };
+    return { cats: '#seriesCats', grid: '#seriesGrid', title: '#seriesTitle', count: '#seriesCount', filter: '#seriesFilter', catFilter: '#seriesCatFilter', sort: '#seriesSort', shape: 'poster', label: 'Séries' };
+  },
+
+  /** Ordenação escolhida para o catálogo; fica gravada (vale para as próximas aberturas). */
+  sortOf(type) {
+    const s = Store.get('sort') || {};
+    return s[type] || 'default';
+  },
+
+  setSort(type, mode) {
+    Store.set('sort', { ...(Store.get('sort') || {}), [type]: mode });
+    this.renderCatalog(type);
+    $('#app').scrollTop = 0;
   },
 
   renderCatalog(type, forceCat) {
@@ -314,9 +326,11 @@ const UI = {
       : st.cat === '__fav__' ? `Favoritos · ${r.label}` : st.cat;
     $(r.title).textContent = label;
 
-    let items = Lib.byCategory(type, st.cat);
+    let items = Lib.sorted(Lib.byCategory(type, st.cat), this.sortOf(type));
     const q = U.norm(st.filter);
     if (q) items = items.filter((i) => (i._n || U.norm(i.title || i.name)).includes(q));
+    const sel = $(r.sort);
+    if (sel && sel.value !== this.sortOf(type)) sel.value = this.sortOf(type);
 
     $(r.count).textContent = `${items.length.toLocaleString('pt-BR')} ${items.length === 1 ? 'item' : 'itens'}`;
     this.renderGrid($(r.grid), items, r.shape);
@@ -366,10 +380,12 @@ const UI = {
       const frag = document.createDocumentFragment();
       while (wrap.firstChild) frag.appendChild(wrap.firstChild);
       const imgs = frag.querySelectorAll('.card-img');
+      const cards = shape === 'logo' ? Array.from(frag.querySelectorAll('.card')) : null;
       const sentinel = host.querySelector('.grid-sentinel');
       if (sentinel) sentinel.remove();
       host.appendChild(frag);
       this._trackImages(host, imgs);
+      if (cards) this.fillEpg(cards);
       host.dataset.shown = String(shown + slice.length);
 
       if (shown + slice.length < items.length) {
@@ -407,6 +423,20 @@ const UI = {
       this._imgIOs.set(host, io);
     }
     imgs.forEach((img) => io.observe(img));
+  },
+
+  /** Programa no ar em cada canal da grade, conforme o guia responde. */
+  async fillEpg(cards) {
+    if (typeof EPG === 'undefined' || !EPG.ready()) return;
+    const now = Date.now();
+    for (const card of cards) {
+      if (!card.isConnected || card.querySelector('.card-epg')) continue;
+      const it = Lib.get(card.dataset.key);
+      if (!it || it.type !== 'live') continue;
+      const nn = await EPG.nowNext(it, now).catch(() => null);
+      if (!nn || !nn.now || !card.isConnected || card.querySelector('.card-epg')) continue;
+      card.appendChild(U.el('div', 'card-epg', U.esc(nn.now.title)));
+    }
   },
 
   _observe(node, cb) {
@@ -732,6 +762,114 @@ const UI = {
   },
 
   /* ================================================================
+   * GUIA — programação de um canal e replay (catch-up)
+   * ================================================================ */
+  guideItem: null,
+  guideProgs: [],
+
+  async openGuide(item) {
+    if (!item || item.type !== 'live') return;
+    this.guideItem = item;
+    const now = Date.now();
+    const days = Math.min(EPG.ARCHIVE_MAX_DAYS, item.archive || 0);
+    $('#guideTitle').textContent = item.title || item.name;
+    $('#guideSub').textContent = days
+      ? `Replay disponível dos últimos ${days} ${days === 1 ? 'dia' : 'dias'}`
+      : (item.group || '');
+    const logo = $('#guideLogo');
+    logo.classList.toggle('hidden', !item.logo);
+    if (item.logo) logo.src = item.logo; else logo.removeAttribute('src');
+
+    let progs = [];
+    if (EPG.ready()) {
+      progs = await EPG.programmes(item, now - (days ? days * 864e5 : 2 * 3600e3), now + 24 * 3600e3).catch(() => []);
+    }
+    if (this.guideItem !== item) return;
+    this.guideProgs = progs;
+    $('#guideList').innerHTML = progs.length
+      ? this.guideHTML(progs, item, now)
+      : `<div class="empty">${U.esc(this.guideEmptyMsg())}</div>`;
+    // Mostra só depois de montar: no Android o foco vai para o programa no ar.
+    $('#guide').classList.remove('hidden');
+    const cur = $('#guideList .guide-now');
+    if (cur) cur.scrollIntoView({ block: 'center' });
+  },
+
+  guideEmptyMsg() {
+    const st = EPG.status.state;
+    if (st === 'ok') return 'O guia não tem programação para este canal.';
+    if (st === 'loading') return 'Baixando a programação… tente de novo em instantes.';
+    return EPG.status.msg || 'Guia de programação indisponível.';
+  },
+
+  guideHTML(progs, item, now) {
+    const canReplay = !!(item.xtream && item.archive && item.streamId);
+    const oldest = now - (item.archive || 0) * 864e5;
+    let html = '', day = '';
+    progs.forEach((p, i) => {
+      const d = new Date(p.start).toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: '2-digit' });
+      if (d !== day) { day = d; html += `<div class="guide-day">${U.esc(d)}</div>`; }
+      const live = p.start <= now && p.stop > now;
+      const past = p.stop <= now;
+      const replay = past && canReplay && p.start >= oldest;
+      const cls = live ? 'guide-now' : past ? (replay ? 'guide-past' : 'guide-past off') : 'guide-future';
+      const badge = live ? '<span class="guide-badge live">Agora</span>'
+        : replay ? '<span class="guide-badge">▶ Replay</span>' : '';
+      const bar = live
+        ? `<span class="guide-bar"><i style="width:${(EPG.progress(p, now) * 100).toFixed(1)}%"></i></span>` : '';
+      html += `
+        <button class="guide-row ${cls}" data-gi="${i}">
+          <span class="guide-time">${EPG.hhmm(p.start)}</span>
+          <span class="guide-info">
+            <span class="guide-name">${U.esc(p.title)}${badge}</span>
+            ${p.desc ? `<span class="guide-desc">${U.esc(p.desc)}</span>` : ''}
+            ${bar}
+          </span>
+        </button>`;
+    });
+    return html;
+  },
+
+  /** Programa escolhido no guia: o do momento abre o canal; os que já passaram, o replay. */
+  async guidePick(i) {
+    const p = this.guideProgs[i], item = this.guideItem;
+    if (!p || !item) return;
+    const now = Date.now();
+    if (p.start <= now && p.stop > now) {
+      this.closeGuide();
+      const playing = Player.open && Player.item && Player.item.key === item.key;
+      if (!playing) this.playItem(item);
+      return;
+    }
+    if (p.start > now) return U.toast(`Começa às ${EPG.hhmm(p.start)}.`);
+    if (!(item.xtream && item.archive && item.streamId)) return U.toast('Este canal não tem replay.', 'warn');
+    if (p.start < now - item.archive * 864e5) return U.toast('Este programa já saiu do período de replay do canal.', 'warn');
+
+    const src = Store.activeSourceObj();
+    if (!src || src.type !== 'xtream') return U.toast('O replay só funciona em listas Xtream Codes.', 'warn');
+    await Xtream.ensureTimezone(src);
+    const when = new Date(p.start).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    this.closeGuide();
+    Player.play({
+      key: `r${item.key}:${p.start}`,
+      type: 'replay',
+      name: p.title,
+      title: p.title,
+      logo: item.logo,
+      group: item.group,
+      url: Xtream.timeshiftUrl(src, item.streamId, p.start, p.stop, 'ts'),
+      altUrl: Xtream.timeshiftUrl(src, item.streamId, p.start, p.stop, 'm3u8'),
+      xtream: true
+    }, { subtitle: `Replay · ${item.title || item.name} · ${when}–${EPG.hhmm(p.stop)}` });
+  },
+
+  closeGuide() {
+    $('#guide').classList.add('hidden');
+    this.guideItem = null;
+    this.guideProgs = [];
+  },
+
+  /* ================================================================
    * FONTES
    * ================================================================ */
   renderSources() {
@@ -810,12 +948,45 @@ const UI = {
     $('#setBuffer').value = Store.get('buffer') || 'normal';
     $('#setResume').checked = !!Store.get('resume');
     $('#setAwake').checked = !!Store.get('keepAwake');
+    $('#setRefresh').value = String(Store.get('refreshHours') ?? 12);
+    $('#setAudioLang').value = Store.get('audioLang') || '';
+    $('#setSubLang').value = Store.get('subLang') || 'off';
+    $('#setEpg').checked = !!Store.get('epg');
+    const src = Store.activeSourceObj();
+    const epgUrl = $('#setEpgUrl');
+    epgUrl.value = (src && src.epgUrl) || '';
+    epgUrl.disabled = !src;
+    epgUrl.placeholder = src && EPG.urlFor({ ...src, epgUrl: '' })
+      ? 'Automático (endereço do painel ou da lista)'
+      : 'Endereço XMLTV do guia (http://…)';
+    this.renderEpgStatus();
+    if (window.bishop.externalPlayer) {
+      $('#setExtPlayer').value = Store.get('externalPlayer') || '';
+      this.renderExtPlayerInfo();
+    }
     this.renderHidden();
     const info = await window.bishop.appInfo();
     $('#aboutInfo').innerHTML =
       `BishopTV v${U.esc(info.version)} · ${U.esc(info.platform || 'Electron ' + info.electron)} · Chromium ${U.esc(info.chrome)}<br>` +
       `Dados salvos em: ${U.esc(info.userData)}<br><br>` +
       `Este app apenas reproduz as listas que você fornece — ele não inclui, hospeda nem distribui nenhum conteúdo.`;
+  },
+
+  renderEpgStatus() {
+    const st = EPG.status;
+    $('#epgStatus').textContent = st.msg || '';
+    $('#epgStatus').classList.toggle('warn', st.state === 'error');
+    $('#epgRefreshBtn').disabled = st.state === 'loading' || st.state === 'none' || st.state === 'off' ||
+      !Store.activeSourceObj();
+  },
+
+  async renderExtPlayerInfo() {
+    const box = $('#extPlayerInfo');
+    const res = await window.bishop.externalPlayer.detect();
+    box.textContent = res.ok
+      ? `Usando ${res.name}: ${res.path}`
+      : (res.error || 'Nenhum player encontrado. Instale o VLC (videolan.org) ou o mpv, ou informe o caminho do .exe.');
+    box.classList.toggle('warn', !res.ok);
   },
 
   renderHidden() {

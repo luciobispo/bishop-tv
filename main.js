@@ -303,7 +303,32 @@ function isDnsFailure(err) {
  * hooks de webRequest e o tratamento de certificados autoassinados
  * valem também para as chamadas da API Xtream.
  * ------------------------------------------------------------------ */
-async function httpGet(url, { timeout = 30000, json = false } = {}) {
+/**
+ * Painéis IPTV sobrecarregados costumam falhar na primeira tentativa e
+ * responder na seguinte. Tenta de novo, com espera crescente, em erros
+ * passageiros: 5xx/429, conexão derrubada e — só em chamadas curtas, como a
+ * API Xtream — tempo esgotado. Um download de lista de 2 minutos que estourou
+ * o tempo não é repetido: seriam mais 4 minutos de espera.
+ */
+const RETRY_DELAYS_MS = [1000, 3000];
+const TRANSIENT_STATUS = new Set([429, 500, 502, 503, 504, 520, 521, 522, 523, 524]);
+const TRANSIENT_NET = /ERR_CONNECTION_RESET|ERR_CONNECTION_CLOSED|ERR_CONNECTION_ABORTED|ERR_EMPTY_RESPONSE|ERR_NETWORK_CHANGED|ERR_HTTP2_PROTOCOL_ERROR|ERR_TIMED_OUT|ERR_CONNECTION_TIMED_OUT/;
+
+async function httpGet(url, opts = {}) {
+  let res;
+  for (let attempt = 0; ; attempt++) {
+    res = await httpGetOnce(url, opts);
+    if (res.ok || !res.transient || attempt >= RETRY_DELAYS_MS.length) break;
+    if (res.timedOut && (opts.timeout || 30000) > 30000) break;
+    console.log(`[net] falha passageira em ${hostOf(url)}; nova tentativa em ${RETRY_DELAYS_MS[attempt]} ms`);
+    await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[attempt]));
+  }
+  delete res.transient;
+  delete res.timedOut;
+  return res;
+}
+
+async function httpGetOnce(url, { timeout = 30000, json = false } = {}) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeout);
   try {
@@ -316,7 +341,11 @@ async function httpGet(url, { timeout = 30000, json = false } = {}) {
       const extra = res.status === 401 || res.status === 403
         ? ' — usuário, senha ou assinatura recusados pelo servidor'
         : res.status === 404 ? ' — este endereço não existe nesse servidor' : '';
-      return { ok: false, error: `O servidor respondeu ${res.status} ${res.statusText}${extra}.` };
+      return {
+        ok: false,
+        transient: TRANSIENT_STATUS.has(res.status),
+        error: `O servidor respondeu ${res.status} ${res.statusText}${extra}.`
+      };
     }
     const text = await res.text();
     if (!json) return { ok: true, data: text };
@@ -332,12 +361,94 @@ async function httpGet(url, { timeout = 30000, json = false } = {}) {
   } catch (err) {
     if (isDnsFailure(err) && await enableDoh()) {
       clearTimeout(timer);
-      return httpGet(url, { timeout, json });
+      return httpGetOnce(url, { timeout, json });
     }
-    return { ok: false, error: describeNetError(err, url) };
+    const timedOut = !!(err && err.name === 'AbortError');
+    return {
+      ok: false,
+      transient: timedOut || TRANSIENT_NET.test(String((err && err.message) || err || '')),
+      timedOut,
+      error: describeNetError(err, url)
+    };
   } finally {
     clearTimeout(timer);
   }
+}
+
+/* ------------------------------------------------------------------ *
+ * Player externo (VLC / mpv)
+ *
+ * O Chromium não toca .mkv nem áudio AC3/E-AC3 (Dolby) — o vídeo abre mudo ou
+ * nem abre. VLC e mpv tocam tudo isso; o app só os chama com a URL e o mesmo
+ * User-Agent. O caminho vem da configuração gravada em disco, nunca do
+ * renderer, para que nenhuma página consiga mandar executar outro programa.
+ * ------------------------------------------------------------------ */
+function externalPlayerCandidates() {
+  const list = [];
+  if (process.platform === 'win32') {
+    const bases = [process.env.ProgramFiles, process.env['ProgramFiles(x86)'],
+      process.env.LOCALAPPDATA && path.join(process.env.LOCALAPPDATA, 'Programs')].filter(Boolean);
+    for (const base of bases) {
+      list.push(path.join(base, 'VideoLAN', 'VLC', 'vlc.exe'));
+      list.push(path.join(base, 'mpv', 'mpv.exe'));
+    }
+    if (process.env.USERPROFILE) list.push(path.join(process.env.USERPROFILE, 'scoop', 'apps', 'mpv', 'current', 'mpv.exe'));
+  } else if (process.platform === 'darwin') {
+    list.push('/Applications/VLC.app/Contents/MacOS/VLC', '/Applications/mpv.app/Contents/MacOS/mpv',
+      '/opt/homebrew/bin/mpv', '/usr/local/bin/mpv');
+  } else {
+    list.push('/usr/bin/vlc', '/usr/bin/mpv', '/snap/bin/vlc', '/usr/local/bin/mpv', '/var/lib/flatpak/exports/bin/org.videolan.VLC');
+  }
+  return list;
+}
+
+async function findExternalPlayer() {
+  const saved = await readStore();
+  const custom = saved && saved.settings && String(saved.settings.externalPlayer || '').trim();
+  if (custom) {
+    try { await fsp.access(custom); return { path: custom, custom: true }; } catch {
+      return { path: null, error: `O player configurado não foi encontrado: ${custom}` };
+    }
+  }
+  for (const p of externalPlayerCandidates()) {
+    try { await fsp.access(p); return { path: p, custom: false }; } catch {}
+  }
+  return { path: null };
+}
+
+function externalPlayerName(exe) {
+  return /mpv/i.test(path.basename(exe)) ? 'mpv' : /vlc/i.test(path.basename(exe)) ? 'VLC' : path.basename(exe);
+}
+
+async function openExternal({ url, title, userAgent, referer } = {}) {
+  url = String(url || '').trim();
+  if (!/^(https?|rtmp|rtsp|udp|rtp):\/\//i.test(url)) return { ok: false, error: 'Endereço de stream inválido.' };
+  const found = await findExternalPlayer();
+  if (!found.path) {
+    return {
+      ok: false,
+      error: found.error || 'Nenhum player externo encontrado. Instale o VLC (videolan.org) ou informe o ' +
+        'caminho do player em Configurações.'
+    };
+  }
+  const ua = String(userAgent || currentUA);
+  const name = externalPlayerName(found.path);
+  const args = name === 'mpv'
+    ? [`--user-agent=${ua}`, ...(referer ? [`--referrer=${referer}`] : []),
+       ...(title ? [`--force-media-title=${title}`] : []), '--', url]
+    : [`--http-user-agent=${ua}`, ...(referer ? [`--http-referrer=${referer}`] : []),
+       ...(title ? [`--meta-title=${title}`] : []), url];
+  return new Promise((resolve) => {
+    let child;
+    try {
+      child = require('child_process').spawn(found.path, args, { detached: true, stdio: 'ignore' });
+    } catch (err) {
+      resolve({ ok: false, error: `Não foi possível abrir o ${name}: ${err.message || err}` });
+      return;
+    }
+    child.once('error', (err) => resolve({ ok: false, error: `Não foi possível abrir o ${name}: ${err.message || err}` }));
+    child.once('spawn', () => { child.unref(); resolve({ ok: true, name }); });
+  });
 }
 
 /**
@@ -415,6 +526,13 @@ function registerIpc() {
    * "formato não suportado".
    */
   ipcMain.handle('net:probe', async (_e, url) => probe(url));
+
+  ipcMain.handle('player:external', async (_e, opts) => openExternal(opts || {}));
+  ipcMain.handle('player:detectExternal', async () => {
+    const found = await findExternalPlayer();
+    return found.path ? { ok: true, path: found.path, name: externalPlayerName(found.path), custom: found.custom }
+      : { ok: false, error: found.error || '' };
+  });
 
   ipcMain.handle('store:read', async () => readStore());
   ipcMain.handle('store:write', async (_e, data) => { await writeStore(data); return { ok: true }; });
