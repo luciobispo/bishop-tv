@@ -199,6 +199,22 @@ antes de escolher o motor, em vez de chutar pela aparência do endereço.
 Tudo (listas, credenciais, favoritos, progresso) fica salvo apenas neste computador, em
 `%APPDATA%/BishopTV/`. O caminho exato aparece no rodapé da tela de Configurações.
 
+### Backup e atualização
+
+Para atualizar no Windows, rode o instalador novo por cima do atual — não precisa desinstalar.
+As listas e configurações ficam em `%APPDATA%/BishopTV/` e não são tocadas pela instalação.
+
+Mesmo assim, o app se protege contra perda de dados:
+
+- O instalador copia `bishoptv-store.json` para `backups/store-antes-da-<versão>.json` antes
+  de instalar.
+- Cada gravação guarda a versão anterior em `bishoptv-store.json.bak`, e a cada dia de uso fica
+  uma cópia em `backups/` (as 10 mais recentes).
+- Se o arquivo de configuração estiver ilegível ou tiver sumido, o app o recupera do `.bak` ou do
+  backup mais novo e avisa; o arquivo estragado vai para `backups/` em vez de ser sobrescrito.
+- Em **Configurações › Backup** dá para exportar tudo para um `.json`, importar um backup (a
+  configuração atual é guardada antes) e abrir a pasta de backups.
+
 > O app se chamava **NeoTV** antes. Como o Electron deriva a pasta de dados do nome do produto,
 > na primeira abertura com o nome novo a configuração antiga (`%APPDATA%/NeoTV/`) é copiada
 > automaticamente — listas, favoritos e histórico continuam lá. A pasta antiga não é apagada;

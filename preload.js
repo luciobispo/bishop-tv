@@ -40,7 +40,12 @@ contextBridge.exposeInMainWorld('bishop', {
 
   store: {
     read: () => ipcRenderer.invoke('store:read'),
-    write: (data) => ipcRenderer.invoke('store:write', data)
+    write: (data) => ipcRenderer.invoke('store:write', data),
+    // Como a configuração foi lida: ok, fresh (1ª abertura), recovered ou failed.
+    status: () => ipcRenderer.invoke('store:status'),
+    exportFile: () => ipcRenderer.invoke('store:export'),
+    importFile: () => ipcRenderer.invoke('store:import'),
+    openBackups: () => ipcRenderer.invoke('store:openBackups')
   },
 
   cache: {

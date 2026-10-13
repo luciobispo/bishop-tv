@@ -1,7 +1,7 @@
 {
   "name": "bishoptv",
   "productName": "BishopTV",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "BishopTV — player IPTV com interface estilo Netflix: listas .m3u, URL e Xtream Codes",
   "main": "main.js",
   "author": "lucio",

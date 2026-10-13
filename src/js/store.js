@@ -71,7 +71,12 @@ const Store = {
   },
 
   _timer: null,
+  // Ligado ao importar um backup: nada da memória pode gravar por cima do
+  // arquivo importado até a janela recarregar.
+  _frozen: false,
+
   save() {
+    if (this._frozen) return;
     clearTimeout(this._timer);
     this._timer = setTimeout(() => {
       window.bishop.store.write(JSON.parse(JSON.stringify(this.data)));
@@ -80,7 +85,17 @@ const Store = {
 
   saveNow() {
     clearTimeout(this._timer);
+    if (this._frozen) return Promise.resolve({ ok: false });
     return window.bishop.store.write(JSON.parse(JSON.stringify(this.data)));
+  },
+
+  freeze() {
+    clearTimeout(this._timer);
+    this._frozen = true;
+  },
+
+  unfreeze() {
+    this._frozen = false;
   },
 
   /* ---------------- fontes ---------------- */

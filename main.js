@@ -41,13 +41,107 @@ async function migrateLegacyStore() {
   }
 }
 
-async function readStore() {
+/* ------------------------------------------------------------------ *
+ * Proteção da configuração
+ *
+ * Antes, um bishoptv-store.json ilegível (cortado, travado pelo antivírus)
+ * virava uma configuração vazia em silêncio — e o próximo salvamento gravava
+ * o vazio por cima, apagando as listas de vez. Agora:
+ *   - cada gravação guarda a versão anterior em bishoptv-store.json.bak;
+ *   - a cada dia de uso fica uma cópia em backups/ (as 10 mais recentes);
+ *   - arquivo ilegível é recuperado do .bak ou do backup mais novo, e o
+ *     original vai para backups/ em vez de ser sobrescrito.
+ * ------------------------------------------------------------------ */
+const backupDir = () => path.join(app.getPath('userData'), 'backups');
+const BACKUPS_KEPT = 10;
+
+/** Como a configuração foi lida nesta abertura — ver o handler store:status. */
+let storeStatus = { state: 'ok' };
+
+async function readJson(file) {
+  const raw = await fsp.readFile(file, 'utf8');
+  const data = JSON.parse(raw);
+  if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('conteúdo inesperado');
+  return data;
+}
+
+/** Backups de backups/, do mais novo para o mais antigo. */
+async function listBackups() {
   try {
-    const raw = await fsp.readFile(storePath(), 'utf8');
-    return JSON.parse(raw);
+    const names = (await fsp.readdir(backupDir())).filter((n) => /\.json$/i.test(n));
+    const withTime = await Promise.all(names.map(async (n) => {
+      const st = await fsp.stat(path.join(backupDir(), n)).catch(() => null);
+      return st ? { name: n, file: path.join(backupDir(), n), at: st.mtimeMs } : null;
+    }));
+    return withTime.filter(Boolean).sort((a, b) => b.at - a.at);
   } catch {
-    return {};
+    return [];
   }
+}
+
+function stamp(d = new Date()) {
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}_${p(d.getHours())}-${p(d.getMinutes())}-${p(d.getSeconds())}`;
+}
+
+async function readStore() {
+  let raw = null;
+  try {
+    return await readJson(storePath());
+  } catch (err) {
+    if (err.code === 'ENOENT') {
+      // Primeira abertura — ou o arquivo sumiu. Se houver cópia, ela volta.
+      raw = null;
+    } else {
+      raw = err;
+      console.error('[store] configuração ilegível:', err.message);
+    }
+  }
+
+  const candidates = [{ file: storePath() + '.bak', label: 'a cópia anterior' }]
+    .concat((await listBackups()).map((b) => ({ file: b.file, label: `o backup ${b.name}` })));
+  for (const c of candidates) {
+    try {
+      const data = await readJson(c.file);
+      // Guarda o arquivo estragado antes de qualquer gravação substituí-lo.
+      if (raw) await quarantineStore();
+      await fsp.writeFile(storePath(), JSON.stringify(data, null, 2), 'utf8');
+      storeStatus = { state: 'recovered', from: c.label, sources: (data.sources || []).length, missing: !raw };
+      console.log(`[store] configuração recuperada de ${c.label}`);
+      return data;
+    } catch {}
+  }
+
+  if (raw) {
+    await quarantineStore();
+    storeStatus = { state: 'failed' };
+  } else {
+    storeStatus = { state: 'fresh' };
+  }
+  return {};
+}
+
+/** Move o arquivo ilegível para backups/, para não ser sobrescrito. */
+async function quarantineStore() {
+  try {
+    await fsp.mkdir(backupDir(), { recursive: true });
+    await fsp.rename(storePath(), path.join(backupDir(), `store-ilegivel-${stamp()}.json.txt`));
+  } catch (e) {
+    console.error('[store] não foi possível guardar o arquivo ilegível:', e.message);
+  }
+}
+
+/** Uma cópia por dia de uso, mantendo as BACKUPS_KEPT mais recentes. */
+async function dailyBackup() {
+  try {
+    await fsp.access(storePath());
+    await fsp.mkdir(backupDir(), { recursive: true });
+    const today = stamp().slice(0, 10);
+    const file = path.join(backupDir(), `store-${today}.json`);
+    try { await fsp.access(file); } catch { await fsp.copyFile(storePath(), file); }
+    const daily = (await listBackups()).filter((b) => /^store-\d{4}-\d\d-\d\d\.json$/.test(b.name));
+    for (const old of daily.slice(BACKUPS_KEPT)) await fsp.unlink(old.file).catch(() => {});
+  } catch {}
 }
 
 let writeQueue = Promise.resolve();
@@ -55,6 +149,8 @@ function writeStore(data) {
   writeQueue = writeQueue.then(async () => {
     const tmp = storePath() + '.tmp';
     await fsp.writeFile(tmp, JSON.stringify(data, null, 2), 'utf8');
+    // A versão anterior vira .bak antes de ser substituída.
+    await fsp.copyFile(storePath(), storePath() + '.bak').catch(() => {});
     await fsp.rename(tmp, storePath());
   }).catch((err) => console.error('[store]', err));
   return writeQueue;
@@ -536,6 +632,58 @@ function registerIpc() {
 
   ipcMain.handle('store:read', async () => readStore());
   ipcMain.handle('store:write', async (_e, data) => { await writeStore(data); return { ok: true }; });
+  ipcMain.handle('store:status', () => storeStatus);
+
+  /** Salva uma cópia da configuração onde o usuário escolher. */
+  ipcMain.handle('store:export', async () => {
+    await writeQueue;
+    const res = await dialog.showSaveDialog(mainWindow, {
+      title: 'Exportar listas e configurações',
+      defaultPath: path.join(app.getPath('documents'), `bishoptv-backup-${stamp().slice(0, 10)}.json`),
+      filters: [{ name: 'Backup do BishopTV', extensions: ['json'] }]
+    });
+    if (res.canceled || !res.filePath) return { ok: false, canceled: true };
+    try {
+      await fsp.copyFile(storePath(), res.filePath);
+      return { ok: true, path: res.filePath };
+    } catch (err) {
+      return { ok: false, error: String(err.message || err) };
+    }
+  });
+
+  /**
+   * Troca a configuração atual pela de um backup. A atual vai antes para
+   * backups/, então importar o arquivo errado também tem volta.
+   */
+  ipcMain.handle('store:import', async () => {
+    await fsp.mkdir(backupDir(), { recursive: true }).catch(() => {});
+    const res = await dialog.showOpenDialog(mainWindow, {
+      title: 'Importar listas e configurações',
+      defaultPath: backupDir(),
+      properties: ['openFile'],
+      filters: [{ name: 'Backup do BishopTV', extensions: ['json', 'bak', 'txt'] }, { name: 'Todos os arquivos', extensions: ['*'] }]
+    });
+    if (res.canceled || !res.filePaths.length) return { ok: false, canceled: true };
+    let data;
+    try {
+      data = await readJson(res.filePaths[0]);
+    } catch (err) {
+      return { ok: false, error: `Este arquivo não é um backup válido (${err.message}).` };
+    }
+    if (!Array.isArray(data.sources)) {
+      return { ok: false, error: 'Este arquivo não é um backup do BishopTV: não há listas nele.' };
+    }
+    await writeQueue;
+    await fsp.copyFile(storePath(), path.join(backupDir(), `store-antes-de-importar-${stamp()}.json`)).catch(() => {});
+    await writeStore(data);
+    return { ok: true, sources: data.sources.length };
+  });
+
+  ipcMain.handle('store:openBackups', async () => {
+    await fsp.mkdir(backupDir(), { recursive: true }).catch(() => {});
+    const err = await shell.openPath(backupDir());
+    return err ? { ok: false, error: err } : { ok: true };
+  });
 
   ipcMain.handle('cache:write', async (_e, key, payload) => {
     try {
@@ -635,6 +783,7 @@ if (!gotLock) {
     await ensureCacheDir().catch(() => {});
     await migrateLegacyStore();
     const saved = await readStore();
+    await dailyBackup();
     if (saved && saved.settings && saved.settings.userAgent) currentUA = saved.settings.userAgent;
     // A rede já precisou do DNS alternativo antes: liga desde o início, para
     // que listas em cache e streams abram sem esperar uma falha primeiro.

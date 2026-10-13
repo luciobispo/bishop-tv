@@ -6,6 +6,7 @@
 const App = {
   async init() {
     await Store.load();
+    this.reportStoreStatus();
     await window.bishop.setUserAgent(Store.get('userAgent'));
     if (window.bishop.onDnsFallback) {
       window.bishop.onDnsFallback(() => {
@@ -80,6 +81,20 @@ const App = {
       el.classList.add('out');
       setTimeout(() => el.remove(), 600);
     }, Math.max(0, MIN_MS - performance.now()));
+  },
+
+  /** Avisa quando a configuração precisou ser recuperada de um backup ao abrir. */
+  async reportStoreStatus() {
+    if (!window.bishop.store.status) return;
+    const st = await window.bishop.store.status().catch(() => null);
+    if (!st) return;
+    if (st.state === 'recovered') {
+      U.toast(`${st.missing ? 'O arquivo de configuração tinha sumido' : 'O arquivo de configuração estava danificado'}; ` +
+        `as listas foram recuperadas de ${st.from} (${st.sources} ${st.sources === 1 ? 'lista' : 'listas'}).`, 'ok', 9000);
+    } else if (st.state === 'failed') {
+      U.toast('O arquivo de configuração estava danificado e não havia backup para recuperar. Ele foi guardado em ' +
+        'Configurações › Backups; se tiver um backup exportado, use “Importar”.', 'warn', 12000);
+    }
   },
 
   showOnboarding() { $('#onboarding').classList.remove('hidden'); },
@@ -645,6 +660,30 @@ const App = {
       });
     } else {
       $$('.desktop-only').forEach((el) => el.classList.add('hidden'));
+    }
+
+    // --- backup das listas e configurações (só no PC) ---
+    if (window.bishop.store.exportFile) {
+      $('#exportStoreBtn').onclick = async () => {
+        await Store.saveNow();
+        const res = await window.bishop.store.exportFile();
+        if (res.ok) U.toast(`Backup salvo em ${res.path}`, 'ok', 7000);
+        else if (!res.canceled) U.toast('Não foi possível exportar: ' + res.error, 'warn');
+      };
+      $('#importStoreBtn').onclick = async () => {
+        await Store.saveNow();
+        // Até recarregar, nenhum salvamento da memória pode cobrir o backup importado.
+        Store.freeze();
+        const res = await window.bishop.store.importFile();
+        if (!res.ok) {
+          Store.unfreeze();
+          if (!res.canceled) U.toast(res.error, 'warn', 7000);
+          return;
+        }
+        U.toast(`Backup importado: ${res.sources} ${res.sources === 1 ? 'lista' : 'listas'}. Reabrindo…`, 'ok');
+        setTimeout(() => location.reload(), 900);
+      };
+      $('#openBackupsBtn').onclick = () => window.bishop.store.openBackups();
     }
 
     $('#clearCacheBtn').onclick = async () => {
