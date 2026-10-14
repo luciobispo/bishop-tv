@@ -11,6 +11,13 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.ActivityCallback;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
+import java.util.ArrayList;
+import java.util.List;
+
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+
 /**
  * Ponte entre a interface web e o {@link PlayerActivity}.
  *
@@ -41,6 +48,9 @@ public class NativePlayerPlugin extends Plugin {
         intent.putExtra(PlayerActivity.EXTRA_LIVE, call.getBoolean("live", false));
         intent.putExtra(PlayerActivity.EXTRA_FALLBACK_URL, call.getString("fallbackUrl"));
         intent.putExtra(PlayerActivity.EXTRA_BUFFER, call.getString("buffer", "normal"));
+        PlayerActivity.pendingChannels = readChannels(call);
+        PlayerActivity.pendingChannelIndex = call.getInt("channelIndex", 0);
+        PlayerActivity.pendingChannelsWrap = Boolean.TRUE.equals(call.getBoolean("channelsWrap", true));
         intent.putExtra(PlayerActivity.EXTRA_AUDIO_LANG, call.getString("audioLang", ""));
         intent.putExtra(PlayerActivity.EXTRA_SUB_LANG, call.getString("subLang", "off"));
         // Só itens que podem ir para a Minha Lista mandam "favorite"; os outros ficam sem o coração.
@@ -49,6 +59,21 @@ public class NativePlayerPlugin extends Plugin {
             intent.putExtra(PlayerActivity.EXTRA_FAVORITE, call.getBoolean("favorite", false));
         }
         startActivityForResult(call, intent, "onPlayerClosed");
+    }
+
+    /** Canais da categoria para o zapping: [{k, u, f, t, s, v}] (chave, url, reserva, título, subtítulo, favorito). */
+    private static List<PlayerActivity.Channel> readChannels(PluginCall call) {
+        JSONArray arr = call.getData().optJSONArray("channels");
+        if (arr == null || arr.length() < 2) return null;
+        List<PlayerActivity.Channel> out = new ArrayList<>(arr.length());
+        for (int i = 0; i < arr.length(); i++) {
+            JSONObject o = arr.optJSONObject(i);
+            if (o == null || o.optString("u").isEmpty()) return null;  // índices desalinhados: melhor sem zapping
+            String fallback = o.optString("f", "");
+            out.add(new PlayerActivity.Channel(o.optString("k"), o.optString("u"),
+                fallback.isEmpty() ? null : fallback, o.optString("t"), o.optString("s"), o.optBoolean("v")));
+        }
+        return out;
     }
 
     @ActivityCallback
@@ -65,6 +90,12 @@ public class NativePlayerPlugin extends Plugin {
             if (error != null) ret.put("error", error);
             if (data.hasExtra(PlayerActivity.RESULT_FAVORITE)) {
                 ret.put("favorite", data.getBooleanExtra(PlayerActivity.RESULT_FAVORITE, false));
+            }
+            String channelKey = data.getStringExtra(PlayerActivity.RESULT_CHANNEL_KEY);
+            if (channelKey != null) ret.put("channelKey", channelKey);
+            String favs = data.getStringExtra(PlayerActivity.RESULT_FAVORITES);
+            if (favs != null) {
+                try { ret.put("favorites", new JSONObject(favs)); } catch (JSONException ignored) {}
             }
         }
         call.resolve(ret);

@@ -204,6 +204,7 @@ const Player = {
     try {
       res = await window.bishop.nativePlayer.play({
         ...this.nativeUrls(item),
+        ...(this.nativeChannels(item) || {}),
         ...(canFav ? { favorite: Store.isFav(item.key) } : {}),
         buffer: Store.get('buffer') || 'normal',
         title: item.title || item.name || '',
@@ -233,9 +234,64 @@ const Player = {
       Store.toggleFav(item);
       if (typeof UI !== 'undefined') UI.refreshFavUI();
     }
+    this.applyNativeZap(item, res);
     if (res.error) U.toast(res.error, 'warn');
     if (res.ended && typeof UI !== 'undefined' && UI.playNextEpisode && UI.playNextEpisode(item)) return;
     if (typeof UI !== 'undefined') UI.refreshContinue();
+  },
+
+  /**
+   * Canais da categoria aberta para o ExoPlayer trocar com as setas (ver
+   * PlayerActivity.handleZapKey). Listas enormes vão só em parte — até
+   * ZAP_MAX canais em volta do atual, sem dar a volta no fim.
+   */
+  ZAP_MAX: 3000,
+
+  nativeChannels(item) {
+    const ctx = this.context;
+    if (!this.isLive || !ctx || !ctx.list || ctx.list.length < 2) return null;
+    const list = ctx.list;
+    let from = 0, to = list.length;
+    if (list.length > this.ZAP_MAX) {
+      from = Math.max(0, Math.min(ctx.index - this.ZAP_MAX / 2, list.length - this.ZAP_MAX));
+      to = from + this.ZAP_MAX;
+    }
+    const channels = [];
+    let channelIndex = -1;
+    for (let i = from; i < to; i++) {
+      const it = list[i];
+      if (!it || !it.url) continue;
+      if (it.key === item.key) channelIndex = channels.length;
+      const u = this.nativeUrls(it);
+      channels.push({
+        k: it.key, u: u.url, f: u.fallbackUrl || '',
+        t: it.title || it.name || '', s: it.group || '', v: Store.isFav(it.key)
+      });
+    }
+    if (channelIndex < 0 || channels.length < 2) return null;
+    return { channels, channelIndex, channelsWrap: from === 0 && to === list.length };
+  },
+
+  /** Volta do ExoPlayer depois de trocar de canal: registra onde parou e os favoritos mexidos. */
+  applyNativeZap(item, res) {
+    const list = this.context && this.context.list;
+    if (!list) return;
+    if (res.channelKey && res.channelKey !== item.key) {
+      const idx = list.findIndex((i) => i.key === res.channelKey);
+      if (idx >= 0) {
+        this.context.index = idx;
+        this.item = list[idx];
+        Store.pushRecent(list[idx]);
+      }
+    }
+    if (res.favorites && typeof res.favorites === 'object') {
+      let changed = false;
+      for (const [key, on] of Object.entries(res.favorites)) {
+        const it = list.find((i) => i.key === key);
+        if (it && !!on !== Store.isFav(key)) { Store.toggleFav(it); changed = true; }
+      }
+      if (changed && typeof UI !== 'undefined') UI.refreshFavUI();
+    }
   },
 
   /**

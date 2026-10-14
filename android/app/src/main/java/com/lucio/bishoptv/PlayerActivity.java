@@ -16,7 +16,11 @@ import android.widget.ImageButton;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.util.List;
 import java.util.Locale;
+
+import org.json.JSONException;
+import org.json.JSONObject;
 
 import androidx.activity.OnBackPressedCallback;
 import androidx.annotation.OptIn;
@@ -69,6 +73,34 @@ public class PlayerActivity extends AppCompatActivity {
     static final String RESULT_ERROR = "error";
     static final String RESULT_FAVORITE = "favorite";
     static final String RESULT_ASPECT_RATIO = "aspectRatio";
+    static final String RESULT_CHANNEL_KEY = "channelKey";
+    static final String RESULT_FAVORITES = "favorites";
+
+    /** Um canal da categoria aberta, para trocar sem sair do player. */
+    static final class Channel {
+        final String key, url, fallbackUrl, title, subtitle;
+        final boolean initialFavorite;
+        boolean favorite;
+
+        Channel(String key, String url, String fallbackUrl, String title, String subtitle, boolean favorite) {
+            this.key = key;
+            this.url = url;
+            this.fallbackUrl = fallbackUrl;
+            this.title = title;
+            this.subtitle = subtitle;
+            this.initialFavorite = favorite;
+            this.favorite = favorite;
+        }
+    }
+
+    /**
+     * A lista de canais vem do plugin por aqui, e não pelo Intent: com
+     * milhares de canais ela passaria do limite de tamanho de um Intent.
+     * O player roda no mesmo processo; a activity pega a lista ao abrir.
+     */
+    static List<Channel> pendingChannels;
+    static int pendingChannelIndex;
+    static boolean pendingChannelsWrap;
 
     private static final String DEFAULT_UA = "VLC/3.0.20 LibVLC/3.0.20";
     private static final int MAX_NETWORK_RETRIES = 2;
@@ -93,6 +125,13 @@ public class PlayerActivity extends AppCompatActivity {
     private boolean canFavorite;
     private boolean favorite;
     private ImageButton favButton;
+    private TextView titleView;
+    private TextView subtitleView;
+    // Zapping: canais da categoria e o que está tocando (null = sem troca).
+    private List<Channel> channels;
+    private int channelIndex;
+    private boolean channelsWrap;
+    private final Runnable applyZap = this::playCurrentChannel;
     private TextView osd;
     private final Runnable hideOsd = () -> osd.animate().alpha(0f).setDuration(250)
         .withEndAction(() -> osd.setVisibility(View.GONE));
@@ -115,6 +154,15 @@ public class PlayerActivity extends AppCompatActivity {
         canFavorite = in.getBooleanExtra(EXTRA_CAN_FAVORITE, false);
         favorite = in.getBooleanExtra(EXTRA_FAVORITE, false);
         long startMs = in.getLongExtra(EXTRA_START_MS, 0L);
+
+        // Recriada pelo sistema (processo morto) a lista não existe mais: o
+        // canal atual continua tocando, só sem troca pelas setas.
+        if (live && pendingChannels != null && pendingChannels.size() > 1) {
+            channels = pendingChannels;
+            channelIndex = Math.max(0, Math.min(pendingChannelIndex, channels.size() - 1));
+            channelsWrap = pendingChannelsWrap;
+        }
+        pendingChannels = null;
 
         setContentView(buildLayout(in.getStringExtra(EXTRA_TITLE), in.getStringExtra(EXTRA_SUBTITLE)));
         hideSystemBars();
@@ -179,12 +227,9 @@ public class PlayerActivity extends AppCompatActivity {
         aspectButton.setOnClickListener(v -> cycleAspectRatio());
         applyAspectRatio();
 
-        ((TextView) playerView.findViewById(R.id.bishop_title)).setText(title == null ? "" : title);
-        if (!TextUtils.isEmpty(subtitle)) {
-            TextView sub = playerView.findViewById(R.id.bishop_subtitle);
-            sub.setText(subtitle);
-            sub.setVisibility(View.VISIBLE);
-        }
+        titleView = playerView.findViewById(R.id.bishop_title);
+        subtitleView = playerView.findViewById(R.id.bishop_subtitle);
+        setTitles(title, subtitle);
         playerView.findViewById(R.id.bishop_back).setOnClickListener(v -> finishWithResult());
 
         favButton = playerView.findViewById(R.id.bishop_fav);
@@ -222,8 +267,15 @@ public class PlayerActivity extends AppCompatActivity {
 
     /* ------------------------------------------------------------------ */
 
+    private void setTitles(String title, String subtitle) {
+        titleView.setText(title == null ? "" : title);
+        subtitleView.setText(subtitle == null ? "" : subtitle);
+        subtitleView.setVisibility(TextUtils.isEmpty(subtitle) ? View.GONE : View.VISIBLE);
+    }
+
     private void toggleFavorite() {
         favorite = !favorite;
+        if (channels != null) channels.get(channelIndex).favorite = favorite;
         updateFavIcon();
         Toast.makeText(this, favorite ? "Adicionado à Minha Lista" : "Removido da Minha Lista",
             Toast.LENGTH_SHORT).show();
@@ -261,8 +313,66 @@ public class PlayerActivity extends AppCompatActivity {
 
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
+        if (player != null && handleZapKey(event)) return true;
         if (player != null && handleSeekKey(event)) return true;
         return super.dispatchKeyEvent(event);
+    }
+
+    /**
+     * Ao vivo, com o menu escondido: seta para cima vai ao próximo canal da
+     * categoria, para baixo ao anterior. CH+/CH− do controle funcionam sempre.
+     * Com o menu aberto as setas continuam navegando pelos botões.
+     */
+    private boolean handleZapKey(KeyEvent e) {
+        if (channels == null) return false;
+        int code = e.getKeyCode();
+        int delta;
+        if (code == KeyEvent.KEYCODE_CHANNEL_UP || code == KeyEvent.KEYCODE_PAGE_UP) delta = 1;
+        else if (code == KeyEvent.KEYCODE_CHANNEL_DOWN || code == KeyEvent.KEYCODE_PAGE_DOWN) delta = -1;
+        else if (code == KeyEvent.KEYCODE_DPAD_UP && !playerView.isControllerFullyVisible()) delta = 1;
+        else if (code == KeyEvent.KEYCODE_DPAD_DOWN && !playerView.isControllerFullyVisible()) delta = -1;
+        else return false;
+        if (e.getAction() != KeyEvent.ACTION_DOWN) return true;
+        // Segurando a tecla, um canal a cada três repetições (~6 por segundo).
+        if (e.getRepeatCount() > 0 && e.getRepeatCount() % 3 != 0) return true;
+        zap(delta);
+        return true;
+    }
+
+    /**
+     * Mostra o canal escolhido na hora, mas só troca o stream quando as
+     * teclas param: passando por vários canais seguidos, abrir cada um só
+     * ocuparia conexões do painel (que costuma limitar quantas são).
+     */
+    private void zap(int delta) {
+        int n = channels.size();
+        int next = channelIndex + delta;
+        if (channelsWrap) next = (next % n + n) % n;
+        else if (next < 0 || next >= n) {
+            showOsd(next < 0 ? "Início da lista" : "Fim da lista");
+            return;
+        }
+        channelIndex = next;
+        Channel c = channels.get(channelIndex);
+        setTitles(c.title, c.subtitle);
+        favorite = c.favorite;
+        if (canFavorite) updateFavIcon();
+        showOsd((delta > 0 ? "▲  " : "▼  ") + c.title);
+        osd.removeCallbacks(applyZap);
+        osd.postDelayed(applyZap, 450);
+    }
+
+    private void playCurrentChannel() {
+        if (player == null || channels == null) return;
+        Channel c = channels.get(channelIndex);
+        url = c.url;
+        fallbackUrl = c.fallbackUrl;
+        forcedHls = false;
+        networkRetries = 0;
+        error = null;
+        player.setMediaSource(buildSource(false));
+        player.setPlayWhenReady(true);
+        player.prepare();
     }
 
     /**
@@ -302,12 +412,16 @@ public class PlayerActivity extends AppCompatActivity {
     }
 
     private void showOsd(String text) {
+        showOsd(text, 1500);
+    }
+
+    private void showOsd(String text, long ms) {
         osd.removeCallbacks(hideOsd);
         osd.animate().cancel();
         osd.setText(text);
         osd.setAlpha(1f);
         osd.setVisibility(View.VISIBLE);
-        osd.postDelayed(hideOsd, 1500);
+        osd.postDelayed(hideOsd, ms);
     }
 
     private static String formatTime(long ms) {
@@ -318,14 +432,6 @@ public class PlayerActivity extends AppCompatActivity {
             : String.format(Locale.ROOT, "%02d:%02d", m, sec);
     }
 
-    /**
-     * O padrão do ExoPlayer volta a tocar com só 2,5 s no buffer (5 s depois de
-     * um travamento). Em IPTV ao vivo o servidor entrega o vídeo quase na mesma
-     * velocidade em que ele toca, então esse colchão nunca cresce e qualquer
-     * oscilação da rede vira "carregando" a cada poucos segundos. Aqui o
-     * colchão é maior — sobretudo depois de um travamento — e o total em bytes
-     * tem teto, porque o buffer mora no heap Java e o Firestick tem pouco.
-     */
     /**
      * Idioma de áudio e legendas escolhido em Configurações. O ExoPlayer só
      * troca de faixa se o stream tiver uma nesse idioma; sem ela, fica a padrão.
@@ -339,6 +445,14 @@ public class PlayerActivity extends AppCompatActivity {
         player.setTrackSelectionParameters(b.build());
     }
 
+    /**
+     * O padrão do ExoPlayer volta a tocar com só 2,5 s no buffer (5 s depois de
+     * um travamento). Em IPTV ao vivo o servidor entrega o vídeo quase na mesma
+     * velocidade em que ele toca, então esse colchão nunca cresce e qualquer
+     * oscilação da rede vira "carregando" a cada poucos segundos. Aqui o
+     * colchão é maior — sobretudo depois de um travamento — e o total em bytes
+     * tem teto, porque o buffer mora no heap Java e o Firestick tem pouco.
+     */
     private LoadControl buildLoadControl() {
         int startMs, rebufferMs, maxMs, maxMb;
         switch (bufferPref) {
@@ -447,6 +561,13 @@ public class PlayerActivity extends AppCompatActivity {
         }
 
         error = describe(e);
+        if (channels != null) {
+            // Zapping: um canal fora do ar não tira o usuário do player — ele
+            // vê o motivo e segue para o próximo com as setas.
+            showOsd(channels.get(channelIndex).title + "\n" + error, 6000);
+            error = null;
+            return;
+        }
         finishWithResult();
     }
 
@@ -501,7 +622,18 @@ public class PlayerActivity extends AppCompatActivity {
         }
         data.putExtra(RESULT_ENDED, ended);
         data.putExtra(RESULT_ASPECT_RATIO, aspectRatio);
-        if (canFavorite) data.putExtra(RESULT_FAVORITE, favorite);
+        if (channels != null) {
+            // Com zapping: o canal em que parou e os favoritos que mudaram no caminho.
+            data.putExtra(RESULT_CHANNEL_KEY, channels.get(channelIndex).key);
+            JSONObject favs = new JSONObject();
+            for (Channel c : channels) {
+                if (c.favorite == c.initialFavorite) continue;
+                try { favs.put(c.key, c.favorite); } catch (JSONException ignored) {}
+            }
+            data.putExtra(RESULT_FAVORITES, favs.toString());
+        } else if (canFavorite) {
+            data.putExtra(RESULT_FAVORITE, favorite);
+        }
         if (error != null) data.putExtra(RESULT_ERROR, error);
         setResult(RESULT_OK, data);
         finish();
@@ -549,7 +681,10 @@ public class PlayerActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        if (osd != null) osd.removeCallbacks(hideOsd);
+        if (osd != null) {
+            osd.removeCallbacks(hideOsd);
+            osd.removeCallbacks(applyZap);
+        }
         if (player != null) {
             player.release();
             player = null;

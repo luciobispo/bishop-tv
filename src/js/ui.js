@@ -692,10 +692,16 @@ const UI = {
     }
 
     if (item.type === 'live') {
-      const list = Lib.byCategory('live', this.state.live.cat === '__all__' ? '__all__' : this.state.live.cat);
-      const idx = Math.max(0, list.findIndex((i) => i.key === item.key));
+      let list = Lib.byCategory('live', this.state.live.cat === '__all__' ? '__all__' : this.state.live.cat);
+      let idx = list.findIndex((i) => i.key === item.key);
+      // Aberto da home ou dos favoritos, fora da categoria selecionada: a troca
+      // de canal percorre todos os canais.
+      if (idx < 0) {
+        list = Lib.live;
+        idx = Math.max(0, list.findIndex((i) => i.key === item.key));
+      }
       this.closeDetail();
-      Player.play(item, { list: list.length ? list : Lib.live, index: idx });
+      Player.play(item, { list, index: idx });
       return;
     }
 
